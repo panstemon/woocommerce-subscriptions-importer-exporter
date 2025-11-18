@@ -14,9 +14,7 @@ Import subscriptions to WooCommerce via CSV, or export your subscriptions from W
 
 The WooCommerce Subscriptions Importer and Exporter is released freely and openly to help WooCommerce developers migrate subscriber data to [WooCommerce Subscriptions](https://woocommerce.com/products/woocommerce-subscriptions/). Even with this plugin, migrations involve a lot of manual work to format subscription data correctly and test imports. Neither [Prospress](https://prospress.com/) nor [WooCommerce](http://woocommerce.com/) provide services to complete a migration with this tool.
 
-For help with a migration, please contact [WisdmLabs](https://wisdmlabs.com/), an official partner for this extension.
-
-You can learn more about the migration service WisdmLabs offer and contact them via their [WooCommerce Subscriptions Migration page](https://wisdmlabs.com/woocommerce-subscriptions-migration-partner/).
+For help with a migration, please [contact an official Woo partner](https://woocommerce.com/development-services/?services=site_migration_platform_integration). For smaller-scale migrations, learn more and consider using [Codeable's Miggration packages here](https://www.codeable.io/partners/woocommerce/migration-packages/). 
 
 Prospress do not provide support for migration issues. This means Prospress can not help with CSV formatting, fixing broken renewals or other issues with subscriptions imported incorrectly. Similarly, issues with subscriptions created with this plugin are not supported via the WooCommerce support system.
 
