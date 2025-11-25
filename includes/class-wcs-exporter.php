@@ -11,6 +11,33 @@ class WCS_Exporter {
 	public static $headers = array();
 
 	/**
+	 * Shopify API instance for fetching Shopify product data
+	 *
+	 * @var WCS_Shopify_API|null
+	 */
+	private static $shopify_api = null;
+
+	/**
+	 * Set the Shopify API instance
+	 *
+	 * @since 2.1
+	 * @param WCS_Shopify_API $api
+	 */
+	public static function set_shopify_api( $api ) {
+		self::$shopify_api = $api;
+	}
+
+	/**
+	 * Get the Shopify API instance
+	 *
+	 * @since 2.1
+	 * @return WCS_Shopify_API|null
+	 */
+	public static function get_shopify_api() {
+		return self::$shopify_api;
+	}
+
+	/**
 	 * Init function for the export writer. Opens the writer and writes the given CSV headers to the output buffer.
 	 *
 	 * @since 1.0
@@ -290,6 +317,70 @@ class WCS_Exporter {
 
 						if ( $line_item ) {
 							$line_items[] = $line_item;
+						}
+					}
+
+					if ( ! empty( $line_items ) ) {
+						$value = implode( ';', $line_items );
+					}
+					break;
+
+				case 'shopify_order_items':
+					$value      = '';
+					$line_items = array();
+					$shopify_api = self::get_shopify_api();
+
+					if ( $shopify_api && $shopify_api->is_configured() ) {
+						foreach ( $subscription->get_items() as $item_id => $item ) {
+
+							if ( version_compare( WC()->version, '3.0', '>=' ) ) {
+								$item_name = $item->get_name();
+								$item_qty  = $item->get_quantity();
+								$product_id = $item->get_product_id();
+								$variation_id = $item->get_variation_id();
+							} else {
+								$item_name = $item['name'];
+								$item_qty  = $item['qty'];
+								$product_id = $item['product_id'];
+								$variation_id = isset( $item['variation_id'] ) ? $item['variation_id'] : 0;
+							}
+
+							// Get the WooCommerce product ID (use variation ID if it exists, otherwise product ID)
+							$woo_product_id = $variation_id ? $variation_id : $product_id;
+
+							// Fetch Shopify product data
+							$shopify_data = array(
+								'shopify_product_id' => '',
+								'shopify_variant_id' => '',
+							);
+
+							if ( $variation_id ) {
+								$result = $shopify_api->get_shopify_variant_by_woo_id( $product_id, $variation_id );
+							} else {
+								$result = $shopify_api->get_shopify_product_by_woo_id( $product_id );
+							}
+
+							if ( ! is_wp_error( $result ) ) {
+								$shopify_data = $result;
+							}
+
+							$line_item = array(
+								'product_id'         => function_exists( 'wcs_get_canonical_product_id' ) ? wcs_get_canonical_product_id( $item ) : '',
+								'shopify_product_id' => $shopify_data['shopify_product_id'],
+								'shopify_variant_id' => $shopify_data['shopify_variant_id'],
+								'name'               => html_entity_decode( $item_name, ENT_NOQUOTES, 'UTF-8' ),
+								'quantity'           => $item_qty,
+								'total'              => wc_format_decimal( $subscription->get_line_total( $item ), 2 ),
+							);
+
+							foreach ( $line_item as $name => $value ) {
+								$line_item[ $name ] = $name . ':' . $value;
+							}
+							$line_item = implode( '|', $line_item );
+
+							if ( $line_item ) {
+								$line_items[] = $line_item;
+							}
 						}
 					}
 

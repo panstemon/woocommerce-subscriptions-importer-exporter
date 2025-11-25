@@ -35,6 +35,15 @@ class WCS_Exporter_Cron {
             WCS_Exporter::$file = $file;
             WCS_Exporter::$headers = $headers;
 
+            // Initialize Shopify API if credentials are provided and shopify_order_items is in headers
+            if ( isset( $headers['shopify_order_items'] ) && ! empty( $post_data['shopify_store_url'] ) && ! empty( $post_data['shopify_access_token'] ) ) {
+                $shopify_api = new WCS_Shopify_API( 
+                    $post_data['shopify_store_url'], 
+                    $post_data['shopify_access_token'] 
+                );
+                WCS_Exporter::set_shopify_api( $shopify_api );
+            }
+
             if ( $post_data['offset'] == 0 ) {
                 WCS_Exporter::write_headers( $headers );
             }

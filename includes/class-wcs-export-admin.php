@@ -170,6 +170,17 @@ class WCS_Export_Admin {
 						<td><label><?php esc_html_e( 'Limit Batch', 'wcs-import-export' ); ?>:</label></td>
 						<td><input type="number" name="limit_batch" min="10" value="500" step="10"> <?php esc_html_e( 'When exporting using cron, this will limit the number of records that will processed on each batch. Reduce this if your PHP limits are low.', 'wcs-import-export' ); ?></td>
 					</tr>
+					<tr>
+						<td colspan="2"><strong><?php esc_html_e( 'Shopify Integration (Optional)', 'wcs-import-export' ); ?></strong></td>
+					</tr>
+					<tr>
+						<td><label for="shopify_store_url"><?php esc_html_e( 'Shopify Store URL', 'wcs-import-export' ); ?>:</label></td>
+						<td><input type="text" name="shopify_store_url" id="shopify_store_url" placeholder="mystore.myshopify.com" value="<?php echo ! empty( $_POST['shopify_store_url'] ) ? esc_attr( $_POST['shopify_store_url'] ) : ''; ?>" style="width: 300px;"> <?php esc_html_e( 'Enter your Shopify store URL (e.g., mystore.myshopify.com)', 'wcs-import-export' ); ?></td>
+					</tr>
+					<tr>
+						<td><label for="shopify_access_token"><?php esc_html_e( 'Shopify Access Token', 'wcs-import-export' ); ?>:</label></td>
+						<td><input type="password" name="shopify_access_token" id="shopify_access_token" placeholder="shpat_xxxxxxxxxxxxx" value="<?php echo ! empty( $_POST['shopify_access_token'] ) ? esc_attr( $_POST['shopify_access_token'] ) : ''; ?>" style="width: 300px;"> <?php esc_html_e( 'Enter your Shopify Admin API access token. Required for shopify_order_items column.', 'wcs-import-export' ); ?></td>
+					</tr>
 				</tbody>
 			</table>
 			<?php esc_html_e( 'When exporting all subscriptions, your site may experience memory exhaustion and therefore you may need to use the limit and offset to separate your export into multiple CSV files.', 'wcs-import-export' ); ?>
@@ -238,6 +249,7 @@ class WCS_Export_Admin {
 			'shipping_company'         => __( 'Shipping Company', 'wcs-import-export' ),
 			'customer_note'            => __( 'Customer Note', 'wcs-import-export' ),
 			'order_items'              => __( 'Subscription Items', 'wcs-import-export' ),
+			'shopify_order_items'      => __( 'Shopify Order Items', 'wcs-import-export' ),
 			'order_notes'              => __( 'Subscription order notes', 'wcs-import-export' ),
 			'coupon_items'             => __( 'Coupons', 'wcs-import-export' ),
 			'fee_items'                => __( 'Fees', 'wcs-import-export' ),
@@ -441,6 +453,18 @@ class WCS_Export_Admin {
 				unset( $headers['payment_method_user_meta'] );
 			}
 
+			// Initialize Shopify API if credentials are provided and shopify_order_items is in headers
+			if ( isset( $headers['shopify_order_items'] ) && ! empty( $_POST['shopify_store_url'] ) && ! empty( $_POST['shopify_access_token'] ) ) {
+				$shopify_api = new WCS_Shopify_API( 
+					sanitize_text_field( $_POST['shopify_store_url'] ), 
+					sanitize_text_field( $_POST['shopify_access_token'] ) 
+				);
+				WCS_Exporter::set_shopify_api( $shopify_api );
+			} elseif ( isset( $headers['shopify_order_items'] ) ) {
+				// Remove shopify_order_items from headers if Shopify credentials are not provided
+				unset( $headers['shopify_order_items'] );
+			}
+
 			WCS_Exporter::write_headers( $headers );
 
 			foreach ( $subscriptions as $subscription ) {
@@ -479,6 +503,18 @@ class WCS_Export_Admin {
 
 		// set the initial offset
 		$post_data['offset'] = 0;
+
+		// Handle Shopify integration for cron export
+		if ( isset( $headers['shopify_order_items'] ) ) {
+			if ( ! empty( $post_data['shopify_store_url'] ) && ! empty( $post_data['shopify_access_token'] ) ) {
+				// Store Shopify credentials for cron to use
+				$post_data['shopify_store_url'] = sanitize_text_field( $post_data['shopify_store_url'] );
+				$post_data['shopify_access_token'] = sanitize_text_field( $post_data['shopify_access_token'] );
+			} else {
+				// Remove shopify_order_items from headers if credentials not provided
+				unset( $headers['shopify_order_items'] );
+			}
+		}
 
 		// event args
 		$event_args = array(
