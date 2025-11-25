@@ -129,51 +129,38 @@ class WCS_Shopify_API {
 		}
 
 		// GraphQL query to find product by woo.id metafield
-		$query = '
-			query GetProductByWooId($query: String!) {
-				products(first: 1, query: $query) {
+		// Using inline query with quoted metafield value for reliable filtering
+		$query = sprintf(
+			'query GetProductByMetafield {
+				products(first: 20, query: "metafields.woo.id:\"%s\"") {
 					edges {
 						node {
 							id
 							title
+							handle
+							metafield(namespace: "woo", key: "id") {
+								value
+								type
+							}
 							variants(first: 100) {
 								edges {
 									node {
 										id
 										title
-										metafields(first: 10) {
-											edges {
-												node {
-													namespace
-													key
-													value
-												}
-											}
+										metafield(namespace: "woo", key: "id") {
+											value
 										}
-									}
-								}
-							}
-							metafields(first: 10) {
-								edges {
-									node {
-										namespace
-										key
-										value
 									}
 								}
 							}
 						}
 					}
 				}
-			}
-		';
-
-		// Search for products with the woo.id metafield matching the WooCommerce product ID
-		$variables = array(
-			'query' => sprintf( 'metafields.woo.id:%d', $woo_product_id ),
+			}',
+			esc_attr( $woo_product_id )
 		);
 
-		$response = $this->graphql_request( $query, $variables );
+		$response = $this->graphql_request( $query );
 
 		if ( is_wp_error( $response ) ) {
 			return $response;
@@ -185,21 +172,39 @@ class WCS_Shopify_API {
 			return $this->get_shopify_product_by_woo_id_fallback( $woo_product_id );
 		}
 
-		$product = $response['data']['products']['edges'][0]['node'];
-		
+		// Find the exact match by verifying the metafield value
+		$matched_product = null;
+		foreach ( $response['data']['products']['edges'] as $edge ) {
+			$product = $edge['node'];
+			if ( isset( $product['metafield']['value'] ) && $product['metafield']['value'] === strval( $woo_product_id ) ) {
+				$matched_product = $product;
+				break;
+			}
+		}
+
+		// If no exact match found, use the first result (fallback)
+		if ( ! $matched_product ) {
+			if ( ! empty( $response['data']['products']['edges'] ) ) {
+				$matched_product = $response['data']['products']['edges'][0]['node'];
+			} else {
+				return $this->get_shopify_product_by_woo_id_fallback( $woo_product_id );
+			}
+		}
+
 		// Extract numeric ID from the global ID (e.g., "gid://shopify/Product/123456789")
-		$shopify_product_id = $this->extract_numeric_id( $product['id'] );
+		$shopify_product_id = $this->extract_numeric_id( $matched_product['id'] );
 		
 		// Get the first variant ID (or you can match by variant metafield if needed)
 		$shopify_variant_id = '';
-		if ( ! empty( $product['variants']['edges'] ) ) {
-			$shopify_variant_id = $this->extract_numeric_id( $product['variants']['edges'][0]['node']['id'] );
+		if ( ! empty( $matched_product['variants']['edges'] ) ) {
+			$shopify_variant_id = $this->extract_numeric_id( $matched_product['variants']['edges'][0]['node']['id'] );
 		}
 
 		$result = array(
 			'shopify_product_id' => $shopify_product_id,
 			'shopify_variant_id' => $shopify_variant_id,
-			'product_title'      => $product['title'],
+			'product_title'      => $matched_product['title'],
+			'handle'             => isset( $matched_product['handle'] ) ? $matched_product['handle'] : '',
 		);
 
 		// Cache the result
@@ -326,16 +331,18 @@ class WCS_Shopify_API {
 			return $this->product_cache[ $cache_key ];
 		}
 
-		// First try to find by variation ID in variant metafields
-		$query = '
-			query GetProductsWithVariantMetafields($first: Int!) {
-				products(first: $first) {
+		// First, try to find the parent product by woo.id and then match the variant
+		$query = sprintf(
+			'query GetProductByMetafield {
+				products(first: 20, query: "metafields.woo.id:\"%s\"") {
 					edges {
 						node {
 							id
 							title
+							handle
 							metafield(namespace: "woo", key: "id") {
 								value
+								type
 							}
 							variants(first: 100) {
 								edges {
@@ -351,39 +358,31 @@ class WCS_Shopify_API {
 						}
 					}
 				}
-			}
-		';
-
-		$variables = array(
-			'first' => 250,
+			}',
+			esc_attr( $woo_product_id )
 		);
 
-		$response = $this->graphql_request( $query, $variables );
+		$response = $this->graphql_request( $query );
 
-		if ( is_wp_error( $response ) ) {
-			return $response;
-		}
-
-		// Search for the product and variant
-		if ( ! empty( $response['data']['products']['edges'] ) ) {
+		if ( ! is_wp_error( $response ) && ! empty( $response['data']['products']['edges'] ) ) {
+			// Find the parent product and look for the variant
 			foreach ( $response['data']['products']['edges'] as $edge ) {
 				$product = $edge['node'];
 				
-				// Check if this is the right product (by parent woo.id)
-				$product_woo_id = isset( $product['metafield']['value'] ) ? intval( $product['metafield']['value'] ) : 0;
-				
-				if ( $product_woo_id === intval( $woo_product_id ) || $product_woo_id === 0 ) {
+				// Verify this is the correct parent product
+				if ( isset( $product['metafield']['value'] ) && $product['metafield']['value'] === strval( $woo_product_id ) ) {
 					// Look for the variant with matching woo.id
 					if ( ! empty( $product['variants']['edges'] ) ) {
 						foreach ( $product['variants']['edges'] as $variant_edge ) {
 							$variant = $variant_edge['node'];
-							$variant_woo_id = isset( $variant['metafield']['value'] ) ? intval( $variant['metafield']['value'] ) : 0;
+							$variant_woo_id = isset( $variant['metafield']['value'] ) ? $variant['metafield']['value'] : '';
 							
-							if ( $variant_woo_id === intval( $woo_variation_id ) ) {
+							if ( $variant_woo_id === strval( $woo_variation_id ) ) {
 								$result = array(
 									'shopify_product_id' => $this->extract_numeric_id( $product['id'] ),
 									'shopify_variant_id' => $this->extract_numeric_id( $variant['id'] ),
 									'product_title'      => $product['title'] . ' - ' . $variant['title'],
+									'handle'             => isset( $product['handle'] ) ? $product['handle'] : '',
 								);
 
 								$this->product_cache[ $cache_key ] = $result;
@@ -391,11 +390,102 @@ class WCS_Shopify_API {
 							}
 						}
 					}
+					
+					// Parent found but variant not matched - return first variant as fallback
+					if ( ! empty( $product['variants']['edges'] ) ) {
+						$first_variant = $product['variants']['edges'][0]['node'];
+						$result = array(
+							'shopify_product_id' => $this->extract_numeric_id( $product['id'] ),
+							'shopify_variant_id' => $this->extract_numeric_id( $first_variant['id'] ),
+							'product_title'      => $product['title'] . ' - ' . $first_variant['title'],
+							'handle'             => isset( $product['handle'] ) ? $product['handle'] : '',
+						);
+
+						$this->product_cache[ $cache_key ] = $result;
+						return $result;
+					}
 				}
 			}
 		}
 
-		// If variation not found, try to get the parent product
+		// Second approach: Try to find by variation ID directly (variant might have its own woo.id metafield)
+		$query_by_variation = sprintf(
+			'query GetProductByVariantMetafield {
+				products(first: 20, query: "metafields.woo.id:\"%s\"") {
+					edges {
+						node {
+							id
+							title
+							handle
+							metafield(namespace: "woo", key: "id") {
+								value
+								type
+							}
+							variants(first: 100) {
+								edges {
+									node {
+										id
+										title
+										metafield(namespace: "woo", key: "id") {
+											value
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}',
+			esc_attr( $woo_variation_id )
+		);
+
+		$response = $this->graphql_request( $query_by_variation );
+
+		if ( ! is_wp_error( $response ) && ! empty( $response['data']['products']['edges'] ) ) {
+			foreach ( $response['data']['products']['edges'] as $edge ) {
+				$product = $edge['node'];
+				
+				// Check if any variant has the matching woo.id
+				if ( ! empty( $product['variants']['edges'] ) ) {
+					foreach ( $product['variants']['edges'] as $variant_edge ) {
+						$variant = $variant_edge['node'];
+						$variant_woo_id = isset( $variant['metafield']['value'] ) ? $variant['metafield']['value'] : '';
+						
+						if ( $variant_woo_id === strval( $woo_variation_id ) ) {
+							$result = array(
+								'shopify_product_id' => $this->extract_numeric_id( $product['id'] ),
+								'shopify_variant_id' => $this->extract_numeric_id( $variant['id'] ),
+								'product_title'      => $product['title'] . ' - ' . $variant['title'],
+								'handle'             => isset( $product['handle'] ) ? $product['handle'] : '',
+							);
+
+							$this->product_cache[ $cache_key ] = $result;
+							return $result;
+						}
+					}
+				}
+				
+				// If product-level metafield matches the variation ID (simple product case)
+				if ( isset( $product['metafield']['value'] ) && $product['metafield']['value'] === strval( $woo_variation_id ) ) {
+					$shopify_variant_id = '';
+					if ( ! empty( $product['variants']['edges'] ) ) {
+						$shopify_variant_id = $this->extract_numeric_id( $product['variants']['edges'][0]['node']['id'] );
+					}
+					
+					$result = array(
+						'shopify_product_id' => $this->extract_numeric_id( $product['id'] ),
+						'shopify_variant_id' => $shopify_variant_id,
+						'product_title'      => $product['title'],
+						'handle'             => isset( $product['handle'] ) ? $product['handle'] : '',
+					);
+
+					$this->product_cache[ $cache_key ] = $result;
+					return $result;
+				}
+			}
+		}
+
+		// If variation not found, try to get the parent product as last resort
 		$parent_result = $this->get_shopify_product_by_woo_id( $woo_product_id );
 		
 		if ( ! is_wp_error( $parent_result ) && ! empty( $parent_result['shopify_product_id'] ) ) {
