@@ -498,6 +498,126 @@ class WCS_Exporter {
 						$value = '';
 					}
 					break;
+				case 'shopify_checkout_link':
+					$value      = '';
+					$shopify_api = self::get_shopify_api();
+
+					if ( $shopify_api && $shopify_api->is_configured() ) {
+						// Get subscription billing interval and period for selling plan matching
+						$billing_interval = '';
+						$billing_period   = '';
+
+						if ( version_compare( WC()->version, '3.0', '>=' ) ) {
+							$billing_interval = $subscription->get_billing_interval();
+							$billing_period   = $subscription->get_billing_period();
+						} else {
+							$billing_interval = $subscription->billing_interval;
+							$billing_period   = $subscription->billing_period;
+						}
+
+						// Build items array with Shopify variant IDs and selling plans
+						$checkout_items = array();
+						$item_index = 0;
+
+						foreach ( $subscription->get_items() as $item_id => $item ) {
+
+							if ( version_compare( WC()->version, '3.0', '>=' ) ) {
+								$item_qty     = $item->get_quantity();
+								$product_id   = $item->get_product_id();
+								$variation_id = $item->get_variation_id();
+							} else {
+								$item_qty     = $item['qty'];
+								$product_id   = $item['product_id'];
+								$variation_id = isset( $item['variation_id'] ) ? $item['variation_id'] : 0;
+							}
+
+							// Fetch Shopify product/variant data
+							$shopify_data = array(
+								'shopify_product_id' => '',
+								'shopify_variant_id' => '',
+							);
+
+							if ( $variation_id ) {
+								$result = $shopify_api->get_shopify_variant_by_woo_id( $product_id, $variation_id );
+							} else {
+								$result = $shopify_api->get_shopify_product_by_woo_id( $product_id );
+							}
+
+							if ( ! is_wp_error( $result ) && ! empty( $result['shopify_variant_id'] ) ) {
+								$shopify_data = $result;
+							}
+
+							// Skip items without a Shopify variant ID
+							if ( empty( $shopify_data['shopify_variant_id'] ) ) {
+								continue;
+							}
+
+							// Fetch selling plan based on billing interval and period
+							$selling_plan_id = '';
+							if ( ! empty( $shopify_data['shopify_product_id'] ) && ! empty( $billing_interval ) && ! empty( $billing_period ) ) {
+								$selling_plan_result = $shopify_api->get_selling_plan_for_product(
+									$shopify_data['shopify_product_id'],
+									$shopify_data['shopify_variant_id'],
+									$billing_interval,
+									$billing_period
+								);
+
+								if ( ! empty( $selling_plan_result['selling_plan_id'] ) ) {
+									$selling_plan_id = $selling_plan_result['selling_plan_id'];
+								}
+							}
+
+							$checkout_items[] = array(
+								'variant_id'      => $shopify_data['shopify_variant_id'],
+								'quantity'        => $item_qty,
+								'selling_plan_id' => $selling_plan_id,
+							);
+							$item_index++;
+						}
+
+						// Get customer email and shipping address
+						$email = '';
+						$shipping_address = array();
+
+						if ( version_compare( WC()->version, '3.0', '>=' ) ) {
+							$email = $subscription->get_billing_email();
+							$shipping_address = array(
+								'first_name' => $subscription->get_shipping_first_name(),
+								'last_name'  => $subscription->get_shipping_last_name(),
+								'address1'   => $subscription->get_shipping_address_1(),
+								'address2'   => $subscription->get_shipping_address_2(),
+								'city'       => $subscription->get_shipping_city(),
+								'zip'        => $subscription->get_shipping_postcode(),
+								'country'    => $subscription->get_shipping_country(),
+								'province'   => $subscription->get_shipping_state(),
+								'phone'      => $subscription->get_billing_phone(),
+							);
+						} else {
+							$email = $subscription->billing_email;
+							$shipping_address = array(
+								'first_name' => $subscription->shipping_first_name,
+								'last_name'  => $subscription->shipping_last_name,
+								'address1'   => $subscription->shipping_address_1,
+								'address2'   => $subscription->shipping_address_2,
+								'city'       => $subscription->shipping_city,
+								'zip'        => $subscription->shipping_postcode,
+								'country'    => $subscription->shipping_country,
+								'province'   => $subscription->shipping_state,
+								'phone'      => $subscription->billing_phone,
+							);
+						}
+
+						// Build the checkout link
+						if ( ! empty( $checkout_items ) ) {
+							$value = $shopify_api->build_checkout_link(
+								$checkout_items,
+								$subscription_id,
+								$email,
+								$shipping_address
+							);
+						}
+					}
+					break;
 				default :
 					$value = '';
 			}

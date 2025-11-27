@@ -126,7 +126,9 @@ class WCS_Export_Admin {
 						<td>
 							<select name="export_format" id="export_format" style="min-width: 220px">
 								<option value="standard" <?php selected( ! empty( $_POST['export_format'] ) && $_POST['export_format'] === 'standard' ); ?>><?php esc_html_e( 'Standard WooCommerce Format', 'wcs-import-export' ); ?></option>
+								<!-- 
 								<option value="appstle" <?php selected( ! empty( $_POST['export_format'] ) && $_POST['export_format'] === 'appstle' ); ?>><?php esc_html_e( 'Appstle Quick Checkout Format', 'wcs-import-export' ); ?></option>
+							 	-->
 							</select>
 							<p class="description" id="appstle-format-note" style="display:none; color: #d63638; margin-top: 5px;">
 								<?php esc_html_e( 'Note: Appstle format requires Shopify credentials below. Each subscription line item will be exported as a separate row. Custom CSV headers will be ignored.', 'wcs-import-export' ); ?>
@@ -205,6 +207,10 @@ class WCS_Export_Admin {
 						<td><label for="shopify_access_token"><?php esc_html_e( 'Shopify Access Token', 'wcs-import-export' ); ?>:</label></td>
 						<td><input type="password" name="shopify_access_token" id="shopify_access_token" placeholder="shpat_xxxxxxxxxxxxx" value="<?php echo ! empty( $_POST['shopify_access_token'] ) ? esc_attr( $_POST['shopify_access_token'] ) : ''; ?>" style="width: 300px;"> <?php esc_html_e( 'Enter your Shopify Admin API access token. Required for shopify_order_items column.', 'wcs-import-export' ); ?></td>
 					</tr>
+					<tr>
+						<td><label for="shopify_storefront_url"><?php esc_html_e( 'Shopify Storefront URL', 'wcs-import-export' ); ?>:</label></td>
+						<td><input type="text" name="shopify_storefront_url" id="shopify_storefront_url" placeholder="mystore.com" value="<?php echo ! empty( $_POST['shopify_storefront_url'] ) ? esc_attr( $_POST['shopify_storefront_url'] ) : ''; ?>" style="width: 300px;"> <?php esc_html_e( 'Enter your Shopify storefront URL for Quick Checkout links (e.g., mystore.com). Leave empty to use Admin API URL.', 'wcs-import-export' ); ?></td>
+					</tr>
 				</tbody>
 			</table>
 			<?php esc_html_e( 'When exporting all subscriptions, your site may experience memory exhaustion and therefore you may need to use the limit and offset to separate your export into multiple CSV files.', 'wcs-import-export' ); ?>
@@ -279,6 +285,7 @@ class WCS_Export_Admin {
 			'fee_items'                => __( 'Fees', 'wcs-import-export' ),
 			'tax_items'                => __( 'Taxes', 'wcs-import-export' ),
 			'download_permissions'     => __( 'Download Permissions Granted', 'wcs-import-export' ),
+			'shopify_checkout_link'    => __( 'Shopify Quick Checkout Link', 'wcs-import-export' ),
 		) );
 		?>
 
@@ -483,9 +490,11 @@ class WCS_Export_Admin {
 			// Initialize Shopify API if credentials are provided
 			$shopify_api = null;
 			if ( ! empty( $_POST['shopify_store_url'] ) && ! empty( $_POST['shopify_access_token'] ) ) {
+				$storefront_url = ! empty( $_POST['shopify_storefront_url'] ) ? sanitize_text_field( $_POST['shopify_storefront_url'] ) : '';
 				$shopify_api = new WCS_Shopify_API( 
 					sanitize_text_field( $_POST['shopify_store_url'] ), 
-					sanitize_text_field( $_POST['shopify_access_token'] ) 
+					sanitize_text_field( $_POST['shopify_access_token'] ),
+					$storefront_url
 				);
 				WCS_Exporter::set_shopify_api( $shopify_api );
 			}
@@ -559,6 +568,7 @@ class WCS_Export_Admin {
 		if ( ! empty( $post_data['shopify_store_url'] ) && ! empty( $post_data['shopify_access_token'] ) ) {
 			$post_data['shopify_store_url'] = sanitize_text_field( $post_data['shopify_store_url'] );
 			$post_data['shopify_access_token'] = sanitize_text_field( $post_data['shopify_access_token'] );
+			$post_data['shopify_storefront_url'] = ! empty( $post_data['shopify_storefront_url'] ) ? sanitize_text_field( $post_data['shopify_storefront_url'] ) : '';
 		}
 
 		// Validate Appstle format requirements

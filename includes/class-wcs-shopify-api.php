@@ -9,11 +9,18 @@
 class WCS_Shopify_API {
 
 	/**
-	 * Shopify store URL
+	 * Shopify store URL (Admin API URL)
 	 *
 	 * @var string
 	 */
 	private $store_url;
+
+	/**
+	 * Shopify storefront URL (for checkout links)
+	 *
+	 * @var string
+	 */
+	private $storefront_url;
 
 	/**
 	 * Shopify access token
@@ -41,10 +48,12 @@ class WCS_Shopify_API {
 	 *
 	 * @param string $store_url Shopify store URL (e.g., mystore.myshopify.com)
 	 * @param string $access_token Shopify Admin API access token
+	 * @param string $storefront_url Optional storefront URL for checkout links (e.g., mystore.com)
 	 */
-	public function __construct( $store_url, $access_token ) {
-		$this->store_url    = rtrim( $store_url, '/' );
-		$this->access_token = $access_token;
+	public function __construct( $store_url, $access_token, $storefront_url = '' ) {
+		$this->store_url      = rtrim( $store_url, '/' );
+		$this->access_token   = $access_token;
+		$this->storefront_url = rtrim( $storefront_url, '/' );
 	}
 
 	/**
@@ -54,6 +63,42 @@ class WCS_Shopify_API {
 	 */
 	public function is_configured() {
 		return ! empty( $this->store_url ) && ! empty( $this->access_token );
+	}
+
+	/**
+	 * Get the Shopify store URL (Admin API URL)
+	 *
+	 * @since 2.1
+	 * @return string The store URL
+	 */
+	public function get_store_url() {
+		$url = $this->store_url;
+		
+		// Add https:// if not present
+		if ( strpos( $url, 'http://' ) !== 0 && strpos( $url, 'https://' ) !== 0 ) {
+			$url = 'https://' . $url;
+		}
+		
+		return rtrim( $url, '/' );
+	}
+
+	/**
+	 * Get the Shopify storefront URL for checkout links
+	 *
+	 * Falls back to store URL if storefront URL is not set
+	 *
+	 * @since 2.1
+	 * @return string The storefront URL
+	 */
+	public function get_storefront_url() {
+		$url = ! empty( $this->storefront_url ) ? $this->storefront_url : $this->store_url;
+		
+		// Add https:// if not present
+		if ( strpos( $url, 'http://' ) !== 0 && strpos( $url, 'https://' ) !== 0 ) {
+			$url = 'https://' . $url;
+		}
+		
+		return rtrim( $url, '/' );
 	}
 
 	/**
@@ -826,5 +871,94 @@ class WCS_Shopify_API {
 		}
 
 		return new WP_Error( 'shopify_connection_failed', __( 'Failed to connect to Shopify store', 'wcs-import-export' ) );
+	}
+
+	/**
+	 * Build a Shopify Quick Checkout link for a subscription
+	 *
+	 * Creates a URL that clears the cart, adds items with selling plans,
+	 * and pre-fills checkout with customer information.
+	 *
+	 * URL Structure:
+	 * https://{store}.myshopify.com/cart/clear?return_to=
+	 *   /cart/add?items[0][id]={variant_id}&items[0][quantity]={qty}&items[0][selling_plan]={plan_id}
+	 *   &return_to=/checkout?note={subscription_id}&checkout[email]={email}&checkout[shipping_address][...]
+	 *   &discount={discount_code}&attributes[woo_subscription_id]={subscription_id}
+	 *
+	 * @since 2.1
+	 * @param array $items Array of items with keys: variant_id, quantity, selling_plan_id
+	 * @param int $subscription_id WooCommerce subscription ID
+	 * @param string $email Customer email
+	 * @param array $shipping_address Shipping address array with keys: first_name, last_name, address1, address2, city, zip, country, phone
+	 * @param string $discount_code Optional discount code (default: APPSTLE_CHECKOUT_LINKS)
+	 * @return string The checkout link URL
+	 */
+	public function build_checkout_link( $items, $subscription_id, $email, $shipping_address, $discount_code = 'APPSTLE_CHECKOUT_LINKS' ) {
+		if ( empty( $items ) || ! $this->is_configured() ) {
+			return '';
+		}
+
+		// Use storefront URL for checkout links
+		$store_url = $this->get_storefront_url();
+
+		// Build the items array parameters for cart/add
+		$cart_add_params = array();
+		foreach ( $items as $index => $item ) {
+			if ( empty( $item['variant_id'] ) ) {
+				continue;
+			}
+			
+			$cart_add_params[] = 'items[' . $index . '][id]=' . $item['variant_id'];
+			$cart_add_params[] = 'items[' . $index . '][quantity]=' . ( isset( $item['quantity'] ) ? intval( $item['quantity'] ) : 1 );
+			
+			if ( ! empty( $item['selling_plan_id'] ) ) {
+				$cart_add_params[] = 'items[' . $index . '][selling_plan]=' . $item['selling_plan_id'];
+			}
+		}
+
+		if ( empty( $cart_add_params ) ) {
+			return '';
+		}
+
+		// Build checkout parameters
+		$checkout_params = array();
+		$checkout_params[] = 'note=' . $subscription_id;
+		
+		if ( ! empty( $email ) ) {
+			$checkout_params[] = 'checkout[email]=' . rawurlencode( $email );
+		}
+		
+		// Add shipping address fields
+		$address_fields = array(
+			'first_name' => 'first_name',
+			'last_name'  => 'last_name',
+			'address1'   => 'address1',
+			'address2'   => 'address2',
+			'city'       => 'city',
+			'zip'        => 'zip',
+			'country'    => 'country',
+			'province'   => 'province',
+			'phone'      => 'phone',
+		);
+		
+		foreach ( $address_fields as $woo_key => $shopify_key ) {
+			if ( ! empty( $shipping_address[ $woo_key ] ) ) {
+				$checkout_params[] = 'checkout[shipping_address][' . $shopify_key . ']=' . rawurlencode( $shipping_address[ $woo_key ] );
+			}
+		}
+		
+		if ( ! empty( $discount_code ) ) {
+			$checkout_params[] = 'discount=' . rawurlencode( $discount_code );
+		}
+
+		// Build the cart/add URL with checkout redirect
+		$cart_add_url = '/cart/add?' . implode( '&', $cart_add_params );
+		$cart_add_url .= '&return_to=' . rawurlencode( '/checkout?' . implode( '&', $checkout_params ) );
+		$cart_add_url .= '&attributes[woo_subscription_id]=' . $subscription_id;
+
+		// Build the full URL with cart/clear redirect
+		$full_url = $store_url . '/cart/clear?return_to=' . rawurlencode( $cart_add_url );
+
+		return $full_url;
 	}
 }

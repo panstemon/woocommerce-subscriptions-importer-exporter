@@ -40,9 +40,11 @@ class WCS_Exporter_Cron {
 
             // Initialize Shopify API if credentials are provided
             if ( ! empty( $post_data['shopify_store_url'] ) && ! empty( $post_data['shopify_access_token'] ) ) {
+                $storefront_url = ! empty( $post_data['shopify_storefront_url'] ) ? $post_data['shopify_storefront_url'] : '';
                 $shopify_api = new WCS_Shopify_API( 
                     $post_data['shopify_store_url'], 
-                    $post_data['shopify_access_token'] 
+                    $post_data['shopify_access_token'],
+                    $storefront_url
                 );
                 WCS_Exporter::set_shopify_api( $shopify_api );
             }
