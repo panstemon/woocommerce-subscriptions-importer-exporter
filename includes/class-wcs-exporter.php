@@ -572,4 +572,173 @@ class WCS_Exporter {
 		exit;
 	}
 
+	/**
+	 * Get Appstle Quick Checkout CSV headers
+	 *
+	 * @since 2.1
+	 * @return array
+	 */
+	public static function get_appstle_headers() {
+		return array(
+			'customer_email'   => 'customer_email',
+			'customer_phone'   => 'customer_phone',
+			'variant_id'       => 'variant_id',
+			'selling_plan_id'  => 'selling_plan_id',
+			'quantity'         => 'quantity',
+			'discount_code'    => 'discount_code',
+			'notes'            => 'notes',
+			'is_shop_pay'      => 'is_shop_pay',
+			'shipping_price'   => 'shipping_price',
+			'first_name'       => 'first_name',
+			'last_name'        => 'last_name',
+			'phone_no'         => 'phone_no',
+			'address_1'        => 'address_1',
+			'address_2'        => 'address_2',
+			'city'             => 'city',
+			'state_province'   => 'state_province',
+			'zip'              => 'zip',
+			'country_code'     => 'country_code',
+		);
+	}
+
+	/**
+	 * Write Appstle Quick Checkout format CSV headers
+	 *
+	 * @since 2.1
+	 */
+	public static function write_appstle_headers() {
+		if ( self::$file == null ) {
+			self::$file = fopen( 'php://output', 'w' );
+			ob_start();
+		}
+
+		self::$headers = self::get_appstle_headers();
+		self::write( self::$headers );
+	}
+
+	/**
+	 * Write subscription data in Appstle Quick Checkout format
+	 * Note: This creates one row per line item in the subscription
+	 *
+	 * @since 2.1
+	 * @param WC_Subscription $subscription
+	 */
+	public static function write_appstle_csv_row( $subscription ) {
+		$shopify_api = self::get_shopify_api();
+
+		if ( ! $shopify_api || ! $shopify_api->is_configured() ) {
+			return; // Appstle export requires Shopify API
+		}
+
+		// Get subscription data
+		if ( version_compare( WC()->version, '3.0', '>=' ) ) {
+			$billing_email     = $subscription->get_billing_email();
+			$billing_phone     = $subscription->get_billing_phone();
+			$billing_interval  = $subscription->get_billing_interval();
+			$billing_period    = $subscription->get_billing_period();
+			$customer_note     = $subscription->get_customer_note();
+			$shipping_total    = $subscription->get_shipping_total();
+			$shipping_first    = $subscription->get_shipping_first_name();
+			$shipping_last     = $subscription->get_shipping_last_name();
+			$shipping_address1 = $subscription->get_shipping_address_1();
+			$shipping_address2 = $subscription->get_shipping_address_2();
+			$shipping_city     = $subscription->get_shipping_city();
+			$shipping_state    = $subscription->get_shipping_state();
+			$shipping_postcode = $subscription->get_shipping_postcode();
+			$shipping_country  = $subscription->get_shipping_country();
+		} else {
+			$billing_email     = $subscription->billing_email;
+			$billing_phone     = $subscription->billing_phone;
+			$billing_interval  = $subscription->billing_interval;
+			$billing_period    = $subscription->billing_period;
+			$customer_note     = $subscription->customer_note;
+			$shipping_total    = $subscription->order_shipping;
+			$shipping_first    = $subscription->shipping_first_name;
+			$shipping_last     = $subscription->shipping_last_name;
+			$shipping_address1 = $subscription->shipping_address_1;
+			$shipping_address2 = $subscription->shipping_address_2;
+			$shipping_city     = $subscription->shipping_city;
+			$shipping_state    = $subscription->shipping_state;
+			$shipping_postcode = $subscription->shipping_postcode;
+			$shipping_country  = $subscription->shipping_country;
+		}
+
+		// Get coupon codes
+		$coupon_codes = array();
+		foreach ( $subscription->get_items( 'coupon' ) as $coupon_item ) {
+			$coupon_codes[] = version_compare( WC()->version, '3.0', '>=' ) ? $coupon_item->get_name() : $coupon_item['name'];
+		}
+		$discount_code = ! empty( $coupon_codes ) ? implode( ',', $coupon_codes ) : '';
+
+		// Process each line item
+		foreach ( $subscription->get_items() as $item_id => $item ) {
+			if ( version_compare( WC()->version, '3.0', '>=' ) ) {
+				$item_qty     = $item->get_quantity();
+				$product_id   = $item->get_product_id();
+				$variation_id = $item->get_variation_id();
+			} else {
+				$item_qty     = $item['qty'];
+				$product_id   = $item['product_id'];
+				$variation_id = isset( $item['variation_id'] ) ? $item['variation_id'] : 0;
+			}
+
+			// Fetch Shopify product data
+			$shopify_data = array(
+				'shopify_product_id' => '',
+				'shopify_variant_id' => '',
+			);
+
+			if ( $variation_id ) {
+				$result = $shopify_api->get_shopify_variant_by_woo_id( $product_id, $variation_id );
+			} else {
+				$result = $shopify_api->get_shopify_product_by_woo_id( $product_id );
+			}
+
+			if ( ! is_wp_error( $result ) ) {
+				$shopify_data = $result;
+			}
+
+			// Fetch selling plan based on billing interval and period
+			$selling_plan_id = '';
+			if ( ! empty( $shopify_data['shopify_product_id'] ) && ! empty( $billing_interval ) && ! empty( $billing_period ) ) {
+				$selling_plan_result = $shopify_api->get_selling_plan_for_product(
+					$shopify_data['shopify_product_id'],
+					$shopify_data['shopify_variant_id'],
+					$billing_interval,
+					$billing_period
+				);
+
+				if ( ! empty( $selling_plan_result['selling_plan_id'] ) ) {
+					$selling_plan_id = $selling_plan_result['selling_plan_id'];
+				}
+			}
+
+			// Build Appstle row
+			$csv_row = array(
+				'customer_email'   => $billing_email,
+				'customer_phone'   => $billing_phone,
+				'variant_id'       => $shopify_data['shopify_variant_id'],
+				'selling_plan_id'  => $selling_plan_id,
+				'quantity'         => $item_qty,
+				'discount_code'    => $discount_code,
+				'notes'            => $customer_note,
+				'is_shop_pay'      => 'FALSE',
+				'shipping_price'   => wc_format_decimal( $shipping_total, 2 ),
+				'first_name'       => $shipping_first,
+				'last_name'        => $shipping_last,
+				'phone_no'         => $billing_phone, // Use billing phone for shipping phone
+				'address_1'        => $shipping_address1,
+				'address_2'        => $shipping_address2,
+				'city'             => $shipping_city,
+				'state_province'   => $shipping_state,
+				'zip'              => $shipping_postcode,
+				'country_code'     => $shipping_country,
+			);
+
+			$csv_row = apply_filters( 'wcsie_format_appstle_csv_row', $csv_row, $subscription, $item );
+
+			self::write( $csv_row );
+		}
+	}
+
 }

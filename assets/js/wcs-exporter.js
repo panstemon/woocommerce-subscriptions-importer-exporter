@@ -32,4 +32,27 @@ jQuery(document).ready(function($){
 
         wcsi_exporter_form.attr('action', wcsi_exporter_form_action);
     });
+
+	// Show/hide Appstle format note and toggle CSV headers tab
+	function toggleAppstleFormatUI() {
+		var exportFormat = $('#export_format').val();
+		var appstleNote = $('#appstle-format-note');
+		var headersTab = $('#wcsi-headers');
+
+		if (exportFormat === 'appstle') {
+			appstleNote.show();
+			headersTab.hide();
+		} else {
+			appstleNote.hide();
+			headersTab.show();
+		}
+	}
+
+	// Initial state
+	toggleAppstleFormatUI();
+
+	// On change
+	$('#export_format').on('change', function() {
+		toggleAppstleFormatUI();
+	});
 });

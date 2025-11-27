@@ -122,6 +122,18 @@ class WCS_Export_Admin {
 			<table class="widefat striped" id="wcsi-export-table">
 				<tbody>
 					<tr>
+						<td width="200"><label for="export_format"><?php esc_html_e( 'Export Format', 'wcs-import-export' ); ?>:</label></td>
+						<td>
+							<select name="export_format" id="export_format" style="min-width: 220px">
+								<option value="standard" <?php selected( ! empty( $_POST['export_format'] ) && $_POST['export_format'] === 'standard' ); ?>><?php esc_html_e( 'Standard WooCommerce Format', 'wcs-import-export' ); ?></option>
+								<option value="appstle" <?php selected( ! empty( $_POST['export_format'] ) && $_POST['export_format'] === 'appstle' ); ?>><?php esc_html_e( 'Appstle Quick Checkout Format', 'wcs-import-export' ); ?></option>
+							</select>
+							<p class="description" id="appstle-format-note" style="display:none; color: #d63638; margin-top: 5px;">
+								<?php esc_html_e( 'Note: Appstle format requires Shopify credentials below. Each subscription line item will be exported as a separate row. Custom CSV headers will be ignored.', 'wcs-import-export' ); ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
 						<td width="200"><label for="filename"><?php esc_html_e( 'Export File name', 'wcs-import-export' ); ?>:</label></td>
 						<td><input type="text" name="filename" placeholder="export filename" value="<?php echo ! empty( $_POST['filename'] ) ? esc_attr( $_POST['filename'] ) : 'subscriptions.csv'; ?>" required></td>
 					</tr>
@@ -465,25 +477,48 @@ class WCS_Export_Admin {
 				unset( $headers['payment_method_user_meta'] );
 			}
 
-			// Initialize Shopify API if credentials are provided and shopify_order_items is in headers
-			if ( isset( $headers['shopify_order_items'] ) && ! empty( $_POST['shopify_store_url'] ) && ! empty( $_POST['shopify_access_token'] ) ) {
+			// Check if Appstle format is selected
+			$export_format = isset( $_POST['export_format'] ) ? sanitize_text_field( $_POST['export_format'] ) : 'standard';
+
+			// Initialize Shopify API if credentials are provided
+			$shopify_api = null;
+			if ( ! empty( $_POST['shopify_store_url'] ) && ! empty( $_POST['shopify_access_token'] ) ) {
 				$shopify_api = new WCS_Shopify_API( 
 					sanitize_text_field( $_POST['shopify_store_url'] ), 
 					sanitize_text_field( $_POST['shopify_access_token'] ) 
 				);
 				WCS_Exporter::set_shopify_api( $shopify_api );
-			} elseif ( isset( $headers['shopify_order_items'] ) ) {
-				// Remove shopify_order_items from headers if Shopify credentials are not provided
-				unset( $headers['shopify_order_items'] );
 			}
 
-			WCS_Exporter::write_headers( $headers );
+			if ( 'appstle' === $export_format ) {
+				// Appstle Quick Checkout format export
+				if ( ! $shopify_api || ! $shopify_api->is_configured() ) {
+					$this->error_message = __( 'Appstle format requires Shopify Store URL and Access Token to be configured.', 'wcs-import-export' );
+					return;
+				}
 
-			foreach ( $subscriptions as $subscription ) {
-				WCS_Exporter::write_subscriptions_csv_row( $subscription );
+				WCS_Exporter::write_appstle_headers();
+
+				foreach ( $subscriptions as $subscription ) {
+					WCS_Exporter::write_appstle_csv_row( $subscription );
+				}
+
+				WCS_Exporter::process_export( $_POST['filename'] );
+			} else {
+				// Standard WooCommerce format export
+				if ( isset( $headers['shopify_order_items'] ) && ! $shopify_api ) {
+					// Remove shopify_order_items from headers if Shopify credentials are not provided
+					unset( $headers['shopify_order_items'] );
+				}
+
+				WCS_Exporter::write_headers( $headers );
+
+				foreach ( $subscriptions as $subscription ) {
+					WCS_Exporter::write_subscriptions_csv_row( $subscription );
+				}
+
+				WCS_Exporter::process_export( $_POST['filename'] );
 			}
-
-			WCS_Exporter::process_export( $_POST['filename'] );
 		} else {
 			$this->error_message = __( 'No subscriptions to export given the filters you have selected.', 'wcs-import-export' );
 		}

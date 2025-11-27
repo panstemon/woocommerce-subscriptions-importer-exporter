@@ -567,6 +567,73 @@ Before exporting, you have the option to modify the column names which are writt
 
 ![](https://cldup.com/o2aw3IBCsa.png)
 
+### Shopify Integration (Optional)
+
+The exporter supports including Shopify product, variant, and selling plan IDs in the CSV export. This is useful when migrating subscriptions from WooCommerce to Shopify.
+
+To use this feature:
+
+1. **Enter your Shopify credentials** in the export form:
+   - **Shopify Store URL**: Your store URL (e.g., `mystore.myshopify.com`)
+   - **Shopify Access Token**: Your Admin API access token (starts with `shpat_`)
+
+2. **Enable the `shopify_order_items` column** in the CSV Headers tab
+
+3. **Important: Enable metafield filtering in Shopify Admin**
+
+   The exporter uses the `woo.id` metafield on products and variants to match WooCommerce products with their Shopify counterparts. You must enable this metafield for filtering in Shopify:
+
+   1. Go to **Shopify Admin > Settings > Custom data**
+   2. Click on **Products** (or **Variants** if you use variation metafields)
+   3. Find the `woo.id` metafield definition
+   4. Click on it and enable **"Storefront Filtering"** option
+   5. Save the changes
+
+   Without this setting enabled, the GraphQL API cannot filter products by the `woo.id` metafield, and product matching will not work correctly.
+
+4. **Exported Data**: The `shopify_order_items` column will include:
+   - `shopify_product_id`: The Shopify product ID
+   - `shopify_variant_id`: The Shopify variant ID
+   - `selling_plan_id`: The matching Shopify selling plan ID (based on billing interval and period)
+
+### Appstle Quick Checkout Format
+
+The exporter also supports exporting subscriptions in the **Appstle Quick Checkout** format, which is compatible with Shopify's Appstle Subscriptions app for bulk importing subscriptions.
+
+To use this format:
+
+1. Select **"Appstle Quick Checkout Format"** from the Export Format dropdown
+2. Enter your Shopify credentials (required for this format)
+3. Click **Export Subscriptions**
+
+**Note:** When using Appstle format:
+- Each subscription line item is exported as a separate row
+- Custom CSV headers are ignored (the format uses fixed Appstle columns)
+- Shopify credentials are required
+
+#### Appstle CSV Columns
+
+| Column | Description |
+|--------|-------------|
+| `customer_email` | Customer's billing email address |
+| `customer_phone` | Customer's billing phone number |
+| `variant_id` | Shopify variant ID |
+| `selling_plan_id` | Shopify selling plan ID (matched by billing interval/period) |
+| `quantity` | Item quantity |
+| `discount_code` | Applied coupon codes (comma-separated) |
+| `notes` | Customer notes from the subscription |
+| `is_shop_pay` | Always "FALSE" |
+| `shipping_price` | Shipping total |
+| `first_name` | Shipping first name |
+| `last_name` | Shipping last name |
+| `phone_no` | Customer phone number |
+| `address_1` | Shipping address line 1 |
+| `address_2` | Shipping address line 2 |
+| `city` | Shipping city |
+| `state_province` | Shipping state/province |
+| `zip` | Shipping postal code |
+| `country_code` | Shipping country code |
+
 ## Exported CSV Columns
 |column|type|description|
 |---|---|---|
