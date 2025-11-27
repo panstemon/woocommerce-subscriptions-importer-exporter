@@ -551,16 +551,27 @@ class WCS_Export_Admin {
 		// set the initial offset
 		$post_data['offset'] = 0;
 
-		// Handle Shopify integration for cron export
-		if ( isset( $headers['shopify_order_items'] ) ) {
-			if ( ! empty( $post_data['shopify_store_url'] ) && ! empty( $post_data['shopify_access_token'] ) ) {
-				// Store Shopify credentials for cron to use
-				$post_data['shopify_store_url'] = sanitize_text_field( $post_data['shopify_store_url'] );
-				$post_data['shopify_access_token'] = sanitize_text_field( $post_data['shopify_access_token'] );
-			} else {
-				// Remove shopify_order_items from headers if credentials not provided
-				unset( $headers['shopify_order_items'] );
+		// Handle export format
+		$export_format = isset( $post_data['export_format'] ) ? sanitize_text_field( $post_data['export_format'] ) : 'standard';
+		$post_data['export_format'] = $export_format;
+
+		// Handle Shopify credentials
+		if ( ! empty( $post_data['shopify_store_url'] ) && ! empty( $post_data['shopify_access_token'] ) ) {
+			$post_data['shopify_store_url'] = sanitize_text_field( $post_data['shopify_store_url'] );
+			$post_data['shopify_access_token'] = sanitize_text_field( $post_data['shopify_access_token'] );
+		}
+
+		// Validate Appstle format requirements
+		if ( 'appstle' === $export_format ) {
+			if ( empty( $post_data['shopify_store_url'] ) || empty( $post_data['shopify_access_token'] ) ) {
+				$this->error_message = __( 'Appstle format requires Shopify Store URL and Access Token to be configured.', 'wcs-import-export' );
+				return;
 			}
+			// For Appstle format, use the fixed headers
+			$headers = WCS_Exporter::get_appstle_headers();
+		} elseif ( isset( $headers['shopify_order_items'] ) && ( empty( $post_data['shopify_store_url'] ) || empty( $post_data['shopify_access_token'] ) ) ) {
+			// Remove shopify_order_items from headers if credentials not provided
+			unset( $headers['shopify_order_items'] );
 		}
 
 		// event args

@@ -28,6 +28,9 @@ class WCS_Exporter_Cron {
 
         $file_path = self::$cron_dir . '/' . $post_data['filename'];
 
+        // Determine export format
+        $export_format = isset( $post_data['export_format'] ) ? $post_data['export_format'] : 'standard';
+
         if ( ! empty( $subscriptions ) ) {
 
             $file = fopen($file_path, 'a');
@@ -35,8 +38,8 @@ class WCS_Exporter_Cron {
             WCS_Exporter::$file = $file;
             WCS_Exporter::$headers = $headers;
 
-            // Initialize Shopify API if credentials are provided and shopify_order_items is in headers
-            if ( isset( $headers['shopify_order_items'] ) && ! empty( $post_data['shopify_store_url'] ) && ! empty( $post_data['shopify_access_token'] ) ) {
+            // Initialize Shopify API if credentials are provided
+            if ( ! empty( $post_data['shopify_store_url'] ) && ! empty( $post_data['shopify_access_token'] ) ) {
                 $shopify_api = new WCS_Shopify_API( 
                     $post_data['shopify_store_url'], 
                     $post_data['shopify_access_token'] 
@@ -44,12 +47,24 @@ class WCS_Exporter_Cron {
                 WCS_Exporter::set_shopify_api( $shopify_api );
             }
 
-            if ( $post_data['offset'] == 0 ) {
-                WCS_Exporter::write_headers( $headers );
-            }
+            if ( 'appstle' === $export_format ) {
+                // Appstle Quick Checkout format
+                if ( $post_data['offset'] == 0 ) {
+                    WCS_Exporter::write_appstle_headers();
+                }
 
-            foreach ( $subscriptions as $subscription ) {
-                WCS_Exporter::write_subscriptions_csv_row( $subscription );
+                foreach ( $subscriptions as $subscription ) {
+                    WCS_Exporter::write_appstle_csv_row( $subscription );
+                }
+            } else {
+                // Standard WooCommerce format
+                if ( $post_data['offset'] == 0 ) {
+                    WCS_Exporter::write_headers( $headers );
+                }
+
+                foreach ( $subscriptions as $subscription ) {
+                    WCS_Exporter::write_subscriptions_csv_row( $subscription );
+                }
             }
 
             if ( $subscriptions_count == $post_data['limit'] ) {
