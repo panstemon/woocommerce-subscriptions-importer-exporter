@@ -580,6 +580,7 @@ class WCS_Exporter {
 	 */
 	public static function get_appstle_headers() {
 		return array(
+			'subscription_id'  => 'subscription_id',
 			'customer_email'   => 'customer_email',
 			'customer_phone'   => 'customer_phone',
 			'variant_id'       => 'variant_id',
@@ -713,8 +714,12 @@ class WCS_Exporter {
 				}
 			}
 
+			// Get subscription ID
+			$subscription_id = version_compare( WC()->version, '3.0', '>=' ) ? $subscription->get_id() : $subscription->id;
+
 			// Build Appstle row
 			$csv_row = array(
+				'subscription_id'  => $subscription_id,
 				'customer_email'   => $billing_email,
 				'customer_phone'   => $billing_phone,
 				'variant_id'       => $shopify_data['shopify_variant_id'],
