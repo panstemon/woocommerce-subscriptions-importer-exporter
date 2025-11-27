@@ -30,6 +30,13 @@ class WCS_Shopify_API {
 	private $product_cache = array();
 
 	/**
+	 * Cache for selling plans to minimize API calls
+	 *
+	 * @var array
+	 */
+	private $selling_plans_cache = array();
+
+	/**
 	 * Constructor
 	 *
 	 * @param string $store_url Shopify store URL (e.g., mystore.myshopify.com)
@@ -526,6 +533,269 @@ class WCS_Shopify_API {
 	 */
 	public function clear_cache() {
 		$this->product_cache = array();
+		$this->selling_plans_cache = array();
+	}
+
+	/**
+	 * Get selling plan ID for a product variant based on billing interval and period
+	 *
+	 * @since 2.1
+	 * @param string $shopify_product_id Shopify product ID (numeric)
+	 * @param string $shopify_variant_id Shopify variant ID (numeric)
+	 * @param string $billing_interval Billing interval (e.g., 1, 2, 3)
+	 * @param string $billing_period Billing period (e.g., 'day', 'week', 'month', 'year')
+	 * @return array Array with 'selling_plan_id' and 'selling_plan_name', or empty values if not found
+	 */
+	public function get_selling_plan_for_product( $shopify_product_id, $shopify_variant_id, $billing_interval, $billing_period ) {
+		if ( empty( $shopify_product_id ) ) {
+			return array(
+				'selling_plan_id'   => '',
+				'selling_plan_name' => '',
+			);
+		}
+
+		// Create cache key
+		$cache_key = $shopify_product_id . '_' . $billing_interval . '_' . $billing_period;
+
+		if ( isset( $this->selling_plans_cache[ $cache_key ] ) ) {
+			return $this->selling_plans_cache[ $cache_key ];
+		}
+
+		// Normalize billing period to Shopify format
+		$shopify_interval_unit = $this->convert_woo_period_to_shopify( $billing_period );
+
+		if ( empty( $shopify_interval_unit ) ) {
+			return array(
+				'selling_plan_id'   => '',
+				'selling_plan_name' => '',
+				'error'             => sprintf( __( 'Unknown billing period: %s', 'wcs-import-export' ), $billing_period ),
+			);
+		}
+
+		// Fetch selling plans for the product
+		$selling_plans = $this->fetch_selling_plans_for_product( $shopify_product_id );
+
+		if ( is_wp_error( $selling_plans ) ) {
+			return array(
+				'selling_plan_id'   => '',
+				'selling_plan_name' => '',
+				'error'             => $selling_plans->get_error_message(),
+			);
+		}
+
+		// Find matching selling plan based on interval and period
+		$result = $this->match_selling_plan( $selling_plans, $billing_interval, $shopify_interval_unit );
+
+		// Cache the result
+		$this->selling_plans_cache[ $cache_key ] = $result;
+
+		return $result;
+	}
+
+	/**
+	 * Fetch all selling plans for a specific product from Shopify
+	 *
+	 * @since 2.1
+	 * @param string $shopify_product_id Shopify product ID (numeric)
+	 * @return array|WP_Error Array of selling plans or WP_Error on failure
+	 */
+	private function fetch_selling_plans_for_product( $shopify_product_id ) {
+		// GraphQL query to fetch selling plans for a product
+		// Using optimized query that fetches selling plan groups and their plans
+		$query = '
+			query GetProductSellingPlans($productId: ID!) {
+				product(id: $productId) {
+					id
+					title
+					sellingPlanGroups(first: 20) {
+						edges {
+							node {
+								id
+								name
+								appId
+								sellingPlans(first: 50) {
+									edges {
+										node {
+											id
+											name
+											description
+											options
+											billingPolicy {
+												... on SellingPlanRecurringBillingPolicy {
+													interval
+													intervalCount
+												}
+												... on SellingPlanFixedBillingPolicy {
+													remainingBalanceChargeTimeAfterCheckout
+												}
+											}
+											deliveryPolicy {
+												... on SellingPlanRecurringDeliveryPolicy {
+													interval
+													intervalCount
+												}
+												... on SellingPlanFixedDeliveryPolicy {
+													anchors {
+														day
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		';
+
+		$variables = array(
+			'productId' => 'gid://shopify/Product/' . $shopify_product_id,
+		);
+
+		$response = $this->graphql_request( $query, $variables );
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		// Extract selling plans from response
+		$selling_plans = array();
+
+		if ( empty( $response['data']['product']['sellingPlanGroups']['edges'] ) ) {
+			return $selling_plans;
+		}
+
+		foreach ( $response['data']['product']['sellingPlanGroups']['edges'] as $group_edge ) {
+			$group = $group_edge['node'];
+			$group_name = $group['name'];
+
+			if ( empty( $group['sellingPlans']['edges'] ) ) {
+				continue;
+			}
+
+			foreach ( $group['sellingPlans']['edges'] as $plan_edge ) {
+				$plan = $plan_edge['node'];
+
+				$selling_plans[] = array(
+					'id'              => $this->extract_numeric_id( $plan['id'] ),
+					'global_id'       => $plan['id'],
+					'name'            => $plan['name'],
+					'description'     => isset( $plan['description'] ) ? $plan['description'] : '',
+					'group_name'      => $group_name,
+					'billing_policy'  => isset( $plan['billingPolicy'] ) ? $plan['billingPolicy'] : array(),
+					'delivery_policy' => isset( $plan['deliveryPolicy'] ) ? $plan['deliveryPolicy'] : array(),
+				);
+			}
+		}
+
+		return $selling_plans;
+	}
+
+	/**
+	 * Match a selling plan based on billing interval and period
+	 *
+	 * @since 2.1
+	 * @param array $selling_plans Array of selling plans
+	 * @param string $billing_interval Billing interval (e.g., 1, 2, 3)
+	 * @param string $shopify_interval_unit Shopify interval unit (DAY, WEEK, MONTH, YEAR)
+	 * @return array Array with 'selling_plan_id' and 'selling_plan_name'
+	 */
+	private function match_selling_plan( $selling_plans, $billing_interval, $shopify_interval_unit ) {
+		if ( empty( $selling_plans ) ) {
+			return array(
+				'selling_plan_id'   => '',
+				'selling_plan_name' => '',
+			);
+		}
+
+		$billing_interval = intval( $billing_interval );
+
+		foreach ( $selling_plans as $plan ) {
+			// Check billing policy for recurring billing
+			if ( ! empty( $plan['billing_policy'] ) ) {
+				$policy = $plan['billing_policy'];
+
+				// Check if it's a recurring billing policy with matching interval
+				if ( isset( $policy['interval'] ) && isset( $policy['intervalCount'] ) ) {
+					$plan_interval = strtoupper( $policy['interval'] );
+					$plan_interval_count = intval( $policy['intervalCount'] );
+
+					if ( $plan_interval === $shopify_interval_unit && $plan_interval_count === $billing_interval ) {
+						return array(
+							'selling_plan_id'   => $plan['id'],
+							'selling_plan_name' => $plan['name'],
+							'selling_plan_group' => $plan['group_name'],
+						);
+					}
+				}
+			}
+
+			// Fallback: Check delivery policy if billing policy doesn't match
+			if ( ! empty( $plan['delivery_policy'] ) ) {
+				$policy = $plan['delivery_policy'];
+
+				if ( isset( $policy['interval'] ) && isset( $policy['intervalCount'] ) ) {
+					$plan_interval = strtoupper( $policy['interval'] );
+					$plan_interval_count = intval( $policy['intervalCount'] );
+
+					if ( $plan_interval === $shopify_interval_unit && $plan_interval_count === $billing_interval ) {
+						return array(
+							'selling_plan_id'   => $plan['id'],
+							'selling_plan_name' => $plan['name'],
+							'selling_plan_group' => $plan['group_name'],
+						);
+					}
+				}
+			}
+		}
+
+		// No exact match found, return first selling plan as fallback (if any exist)
+		return array(
+			'selling_plan_id'   => '',
+			'selling_plan_name' => '',
+			'no_match'          => sprintf(
+				__( 'No selling plan found matching %d %s', 'wcs-import-export' ),
+				$billing_interval,
+				$shopify_interval_unit
+			),
+		);
+	}
+
+	/**
+	 * Convert WooCommerce billing period to Shopify interval unit
+	 *
+	 * @since 2.1
+	 * @param string $woo_period WooCommerce period (day, week, month, year)
+	 * @return string Shopify interval unit (DAY, WEEK, MONTH, YEAR)
+	 */
+	private function convert_woo_period_to_shopify( $woo_period ) {
+		$period_map = array(
+			'day'   => 'DAY',
+			'days'  => 'DAY',
+			'week'  => 'WEEK',
+			'weeks' => 'WEEK',
+			'month' => 'MONTH',
+			'months' => 'MONTH',
+			'year'  => 'YEAR',
+			'years' => 'YEAR',
+		);
+
+		$woo_period = strtolower( trim( $woo_period ) );
+
+		return isset( $period_map[ $woo_period ] ) ? $period_map[ $woo_period ] : '';
+	}
+
+	/**
+	 * Get all selling plans for a product (public method for debugging/testing)
+	 *
+	 * @since 2.1
+	 * @param string $shopify_product_id Shopify product ID
+	 * @return array|WP_Error
+	 */
+	public function get_product_selling_plans( $shopify_product_id ) {
+		return $this->fetch_selling_plans_for_product( $shopify_product_id );
 	}
 
 	/**

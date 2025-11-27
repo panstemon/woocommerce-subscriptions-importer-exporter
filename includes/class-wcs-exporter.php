@@ -331,6 +331,18 @@ class WCS_Exporter {
 					$shopify_api = self::get_shopify_api();
 
 					if ( $shopify_api && $shopify_api->is_configured() ) {
+						// Get subscription billing interval and period for selling plan matching
+						$billing_interval = '';
+						$billing_period   = '';
+
+						if ( version_compare( WC()->version, '3.0', '>=' ) ) {
+							$billing_interval = $subscription->get_billing_interval();
+							$billing_period   = $subscription->get_billing_period();
+						} else {
+							$billing_interval = $subscription->billing_interval;
+							$billing_period   = $subscription->billing_period;
+						}
+
 						foreach ( $subscription->get_items() as $item_id => $item ) {
 
 							if ( version_compare( WC()->version, '3.0', '>=' ) ) {
@@ -364,10 +376,26 @@ class WCS_Exporter {
 								$shopify_data = $result;
 							}
 
+							// Fetch selling plan based on billing interval and period
+							$selling_plan_id = '';
+							if ( ! empty( $shopify_data['shopify_product_id'] ) && ! empty( $billing_interval ) && ! empty( $billing_period ) ) {
+								$selling_plan_result = $shopify_api->get_selling_plan_for_product(
+									$shopify_data['shopify_product_id'],
+									$shopify_data['shopify_variant_id'],
+									$billing_interval,
+									$billing_period
+								);
+
+								if ( ! empty( $selling_plan_result['selling_plan_id'] ) ) {
+									$selling_plan_id = $selling_plan_result['selling_plan_id'];
+								}
+							}
+
 							$line_item = array(
 								'product_id'         => function_exists( 'wcs_get_canonical_product_id' ) ? wcs_get_canonical_product_id( $item ) : '',
 								'shopify_product_id' => $shopify_data['shopify_product_id'],
 								'shopify_variant_id' => $shopify_data['shopify_variant_id'],
+								'selling_plan_id'    => $selling_plan_id,
 								'name'               => html_entity_decode( $item_name, ENT_NOQUOTES, 'UTF-8' ),
 								'quantity'           => $item_qty,
 								'total'              => wc_format_decimal( $subscription->get_line_total( $item ), 2 ),
