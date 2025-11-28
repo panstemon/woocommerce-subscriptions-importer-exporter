@@ -618,6 +618,31 @@ class WCS_Exporter {
 						}
 					}
 					break;
+				case 'shopify_subscription_status':
+					$value = get_post_meta( $subscription_id, '_shopify_subscription_status', true );
+					break;
+				case 'shopify_subscription_id':
+					$value = get_post_meta( $subscription_id, '_shopify_subscription_id', true );
+					break;
+				case 'shopify_subscription_key':
+					$value = get_post_meta( $subscription_id, '_shopify_subscription_key', true );
+					break;
+				case 'shopify_subscription_created_at':
+					$value = get_post_meta( $subscription_id, '_shopify_subscription_created_at', true );
+					break;
+				case 'shopify_subscription_cancelled_at':
+					$value = get_post_meta( $subscription_id, '_shopify_subscription_cancelled_at', true );
+					break;
+				case 'shopify_subscription_edit_url':
+					$shopify_sub_id = get_post_meta( $subscription_id, '_shopify_subscription_id', true );
+					$shopify_api = self::get_shopify_api();
+					if ( ! empty( $shopify_sub_id ) && $shopify_api && $shopify_api->is_configured() ) {
+						$store_url = $shopify_api->get_store_url();
+						$value = $store_url . '/apps/subscription-by-rhem/dashboard/subscriptions/' . $shopify_sub_id . '/detail';
+					} else {
+						$value = '';
+					}
+					break;
 				default :
 					$value = '';
 			}

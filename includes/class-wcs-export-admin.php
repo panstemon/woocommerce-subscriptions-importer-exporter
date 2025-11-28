@@ -286,6 +286,12 @@ class WCS_Export_Admin {
 			'tax_items'                => __( 'Taxes', 'wcs-import-export' ),
 			'download_permissions'     => __( 'Download Permissions Granted', 'wcs-import-export' ),
 			'shopify_checkout_link'    => __( 'Shopify Quick Checkout Link', 'wcs-import-export' ),
+			'shopify_subscription_status'     => __( 'Shopify Subscription Status', 'wcs-import-export' ),
+			'shopify_subscription_id'         => __( 'Shopify Subscription ID', 'wcs-import-export' ),
+			'shopify_subscription_key'        => __( 'Shopify Subscription Key', 'wcs-import-export' ),
+			'shopify_subscription_created_at' => __( 'Shopify Subscription Created At', 'wcs-import-export' ),
+			'shopify_subscription_cancelled_at' => __( 'Shopify Subscription Cancelled At', 'wcs-import-export' ),
+			'shopify_subscription_edit_url'   => __( 'Shopify Subscription Edit URL', 'wcs-import-export' ),
 		) );
 		?>
 
