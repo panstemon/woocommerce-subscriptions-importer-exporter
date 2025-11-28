@@ -89,7 +89,7 @@ jQuery(document).ready(function($) {
 				}
 			},
 			complete: function() {
-				resetUI();
+				resetUI(true); // Hide progress on cancel
 			}
 		});
 	});
@@ -109,9 +109,13 @@ jQuery(document).ready(function($) {
 		totalItems = 0;
 		processedItems = 0;
 
+		// Hide any previous message
+		$('#wcs-export-message').hide();
+
 		// Update UI
 		$exportBtn.prop('disabled', true);
 		$cronBtn.prop('disabled', true);
+		$cancelBtn.show().prop('disabled', false).text(wcsExporterAjax.strings.cancel || 'Cancel Export');
 		$progressSection.show();
 		$progressBar.css('width', '0%');
 		$progressText.text('0%');
@@ -144,7 +148,7 @@ jQuery(document).ready(function($) {
 
 					if (totalItems === 0) {
 						showMessage('warning', wcsExporterAjax.strings.noSubscriptions || 'No subscriptions found matching your criteria.');
-						resetUI();
+						resetUI(true); // Hide progress when no items
 						return;
 					}
 
@@ -154,7 +158,7 @@ jQuery(document).ready(function($) {
 					processBatch();
 				} else {
 					showMessage('error', response.data.message || wcsExporterAjax.strings.error || 'An error occurred.');
-					resetUI();
+					resetUI(true); // Hide progress on error
 				}
 			},
 			error: function(jqXHR) {
@@ -165,7 +169,7 @@ jQuery(document).ready(function($) {
 					errorMsg = jqXHR.responseJSON.data.message;
 				}
 				showMessage('error', errorMsg);
-				resetUI();
+				resetUI(true); // Hide progress on error
 			}
 		});
 	}
@@ -202,12 +206,12 @@ jQuery(document).ready(function($) {
 					}
 				} else {
 					showMessage('error', response.data.message || wcsExporterAjax.strings.batchError || 'Error processing batch.');
-					resetUI();
+					resetUI(true); // Hide progress on error
 				}
 			},
 			error: function() {
 				showMessage('error', wcsExporterAjax.strings.connectionError || 'Connection error. Please try again.');
-				resetUI();
+				resetUI(true); // Hide progress on error
 			}
 		});
 	}
@@ -314,8 +318,10 @@ jQuery(document).ready(function($) {
 		$progressBar.css('width', '100%');
 		$progressText.text('100%');
 		$statusText.text(wcsExporterAjax.strings.completed || 'Export completed!');
+		$statRemaining.text('00:00');
 		
-		showMessage('success', wcsExporterAjax.strings.exportComplete || 'Export completed successfully! Your download should start automatically.');
+		// Hide cancel button since export is done
+		$cancelBtn.hide();
 
 		// Get download URL
 		$.ajax({
@@ -328,7 +334,11 @@ jQuery(document).ready(function($) {
 			},
 			success: function(response) {
 				if (response.success && response.data.download_url) {
-					// Trigger download
+					// Show success message with download link
+					var downloadLink = '<a href="' + response.data.download_url + '" class="button button-primary" style="margin-left: 10px;">Download CSV</a>';
+					showMessage('success', (wcsExporterAjax.strings.exportComplete || 'Export completed successfully!') + ' ' + downloadLink);
+					
+					// Trigger automatic download
 					window.location.href = response.data.download_url;
 				} else {
 					showMessage('error', response.data.message || 'Could not generate download link.');
@@ -338,10 +348,8 @@ jQuery(document).ready(function($) {
 				showMessage('error', 'Error generating download link.');
 			},
 			complete: function() {
-				// Reset UI after a short delay
-				setTimeout(function() {
-					resetUI();
-				}, 2000);
+				// Re-enable buttons but keep progress section visible
+				resetUI(false); // Don't hide progress section
 			}
 		});
 	}
@@ -374,7 +382,7 @@ jQuery(document).ready(function($) {
 	/**
 	 * Reset UI to initial state
 	 */
-	function resetUI() {
+	function resetUI(hideProgress) {
 		isProcessing = false;
 		isCancelled = false;
 		sessionId = null;
@@ -384,12 +392,10 @@ jQuery(document).ready(function($) {
 		$cronBtn.prop('disabled', false);
 		$cancelBtn.prop('disabled', false).text(wcsExporterAjax.strings.cancel || 'Cancel Export');
 		
-		// Hide progress section after a delay
-		setTimeout(function() {
-			if (!isProcessing) {
-				$progressSection.slideUp();
-			}
-		}, 3000);
+		// Only hide progress section if explicitly requested (e.g., on cancel or error)
+		if (hideProgress) {
+			$progressSection.slideUp();
+		}
 	}
 
 	// Window beforeunload warning

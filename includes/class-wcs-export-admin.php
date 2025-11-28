@@ -95,8 +95,12 @@ class WCS_Export_Admin {
 			),
 		) );
 
+		// Register and enqueue a dummy style handle for our inline styles
+		wp_register_style( 'wcs-exporter-styles', false );
+		wp_enqueue_style( 'wcs-exporter-styles' );
+
 		// Add inline styles for progress bar
-		wp_add_inline_style( 'woocommerce_admin_styles', '
+		wp_add_inline_style( 'wcs-exporter-styles', '
 			#wcs-export-progress-section {
 				background: #fff;
 				border: 1px solid #ccd0d4;
@@ -106,13 +110,16 @@ class WCS_Export_Admin {
 			}
 			#wcs-export-progress-section h3 {
 				margin-top: 0;
+				margin-bottom: 15px;
+				font-size: 1.3em;
 			}
 			.wcs-progress-container {
-				background: #f0f0f0;
+				background: #e0e0e0;
 				border-radius: 4px;
 				height: 30px;
 				margin: 15px 0;
 				overflow: hidden;
+				position: relative;
 			}
 			#wcs-export-progress-bar {
 				background: linear-gradient(90deg, #0073aa, #00a0d2);
@@ -122,36 +129,49 @@ class WCS_Export_Admin {
 				border-radius: 4px;
 			}
 			#wcs-export-progress-text {
-				text-align: center;
-				margin-top: -25px;
+				position: absolute;
+				top: 0;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				display: flex;
+				align-items: center;
+				justify-content: center;
 				font-weight: bold;
-				color: #fff;
-				text-shadow: 1px 1px 1px rgba(0,0,0,0.3);
-				position: relative;
-				z-index: 1;
-				line-height: 25px;
+				font-size: 14px;
+				color: #333;
+				text-shadow: 0 0 2px rgba(255,255,255,0.8);
 			}
 			.wcs-stats-grid {
 				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+				grid-template-columns: repeat(5, 1fr);
 				gap: 15px;
 				margin: 20px 0;
 			}
+			@media (max-width: 782px) {
+				.wcs-stats-grid {
+					grid-template-columns: repeat(2, 1fr);
+				}
+			}
 			.wcs-stat-box {
 				background: #f9f9f9;
-				padding: 10px;
+				padding: 15px 10px;
 				border-radius: 4px;
 				text-align: center;
+				border: 1px solid #e0e0e0;
 			}
 			.wcs-stat-label {
-				font-size: 12px;
+				font-size: 11px;
 				color: #666;
 				display: block;
+				text-transform: uppercase;
+				margin-bottom: 5px;
 			}
 			.wcs-stat-value {
-				font-size: 18px;
+				font-size: 20px;
 				font-weight: bold;
 				color: #0073aa;
+				display: block;
 			}
 			.wcs-warning-box {
 				background: #fff8e5;
@@ -165,13 +185,16 @@ class WCS_Export_Admin {
 			#wcs-export-cancel {
 				margin-top: 10px;
 			}
-			.wcs-export-status {
+			#wcs-export-status-text {
 				margin-top: 15px;
 				padding: 10px;
 				background: #f9f9f9;
 				border-radius: 4px;
 				font-style: italic;
 				color: #666;
+			}
+			#wcs-export-status-text:empty {
+				display: none;
 			}
 		' );
 	}
@@ -249,8 +272,8 @@ class WCS_Export_Admin {
 			
 			<div class="wcs-progress-container">
 				<div id="wcs-export-progress-bar"></div>
+				<div id="wcs-export-progress-text">0%</div>
 			</div>
-			<div id="wcs-export-progress-text">0%</div>
 			
 			<div class="wcs-stats-grid">
 				<div class="wcs-stat-box">
@@ -266,7 +289,7 @@ class WCS_Export_Admin {
 					<span id="wcs-stat-elapsed" class="wcs-stat-value">00:00</span>
 				</div>
 				<div class="wcs-stat-box">
-					<span class="wcs-stat-label"><?php esc_html_e( 'Estimated Total', 'wcs-import-export' ); ?></span>
+					<span class="wcs-stat-label"><?php esc_html_e( 'Estimated', 'wcs-import-export' ); ?></span>
 					<span id="wcs-stat-estimated" class="wcs-stat-value">--:--</span>
 				</div>
 				<div class="wcs-stat-box">
@@ -275,11 +298,11 @@ class WCS_Export_Admin {
 				</div>
 			</div>
 			
-			<button type="button" id="wcs-export-cancel" class="button">
+			<button type="button" id="wcs-export-cancel" class="button button-secondary">
 				<?php esc_html_e( 'Cancel Export', 'wcs-import-export' ); ?>
 			</button>
 			
-			<div id="wcs-export-status-text" class="wcs-export-status"></div>
+			<div id="wcs-export-status-text"></div>
 		</div>
 		<?php
 	}
@@ -937,7 +960,7 @@ class WCS_Export_Admin {
 		// Count total subscriptions to export
 		$subscription_args = array(
 			'subscriptions_per_page' => -1,
-			'subscription_status'    => isset( $form_data['status'] ) ? array_map( 'sanitize_text_field', $form_data['status'] ) : array( 'any' ),
+			'subscription_status'    => ! empty( $form_data['status'] ) ? array_keys( $form_data['status'] ) : array( 'any' ),
 		);
 
 		// Apply date filters
@@ -1069,14 +1092,18 @@ class WCS_Export_Admin {
 		}
 
 		// Initialize Shopify API if needed
-		$shopify_api = null;
-		if ( ! empty( $form_data['shopify_store_url'] ) && ! empty( $form_data['shopify_api_token'] ) ) {
+		if ( ! empty( $form_data['shopify_store_url'] ) && ! empty( $form_data['shopify_access_token'] ) ) {
 			$shopify_api = new WCS_Shopify_API(
 				sanitize_text_field( $form_data['shopify_store_url'] ),
-				sanitize_text_field( $form_data['shopify_api_token'] ),
+				sanitize_text_field( $form_data['shopify_access_token'] ),
 				isset( $form_data['shopify_storefront_url'] ) ? sanitize_text_field( $form_data['shopify_storefront_url'] ) : ''
 			);
+			WCS_Exporter::set_shopify_api( $shopify_api );
 		}
+
+		// Set up WCS_Exporter with file and headers
+		WCS_Exporter::$file = $file;
+		WCS_Exporter::$headers = $csv_headers;
 
 		// Process batch
 		$batch_processed = 0;
@@ -1088,18 +1115,11 @@ class WCS_Export_Admin {
 			}
 
 			if ( $export_format === 'appstle' ) {
-				// Appstle format export - returns array of rows (one per line item)
-				$rows = WCS_Exporter::get_appstle_row_data( $subscription, $shopify_api );
-				foreach ( $rows as $row ) {
-					fputcsv( $file, $row );
-				}
+				// Appstle format export
+				WCS_Exporter::write_appstle_csv_row( $subscription );
 			} else {
 				// Standard format export
-				$row = array();
-				foreach ( array_keys( $csv_headers ) as $column ) {
-					$row[] = WCS_Exporter::get_data( $column, $subscription, $shopify_api );
-				}
-				fputcsv( $file, $row );
+				WCS_Exporter::write_subscriptions_csv_row( $subscription );
 			}
 
 			$batch_processed++;
@@ -1197,6 +1217,11 @@ class WCS_Export_Admin {
 	 * @since 2.1.0
 	 */
 	public function handle_export_download() {
+		// Only process if this is actually a download request
+		if ( ! isset( $_GET['action'] ) || $_GET['action'] !== 'wcs_export_file_download' ) {
+			return;
+		}
+
 		$session_id = isset( $_GET['session_id'] ) ? sanitize_text_field( $_GET['session_id'] ) : '';
 		$nonce      = isset( $_GET['nonce'] ) ? $_GET['nonce'] : '';
 
