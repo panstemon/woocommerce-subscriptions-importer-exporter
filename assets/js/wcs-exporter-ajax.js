@@ -328,7 +328,7 @@ jQuery(document).ready(function($) {
 			url: wcsExporterAjax.ajaxUrl,
 			type: 'POST',
 			data: {
-				action: 'wcs_export_download',
+				action: 'wcs_export_complete',
 				nonce: wcsExporterAjax.nonce,
 				session_id: sessionId
 			},

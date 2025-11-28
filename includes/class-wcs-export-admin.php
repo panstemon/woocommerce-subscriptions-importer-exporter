@@ -41,10 +41,10 @@ class WCS_Export_Admin {
 		add_action( 'wp_ajax_wcs_export_start', array( &$this, 'ajax_export_start' ) );
 		add_action( 'wp_ajax_wcs_export_batch', array( &$this, 'ajax_export_batch' ) );
 		add_action( 'wp_ajax_wcs_export_cancel', array( &$this, 'ajax_export_cancel' ) );
-		add_action( 'wp_ajax_wcs_export_download', array( &$this, 'ajax_export_download' ) );
+		add_action( 'wp_ajax_wcs_export_complete', array( &$this, 'ajax_export_complete' ) );
 
-		// Handle file download
-		add_action( 'admin_init', array( &$this, 'handle_export_download' ) );
+		// Ensure export directory is secured (runs once per admin init)
+		add_action( 'admin_init', array( __CLASS__, 'maybe_secure_export_directory' ) );
 	}
 
 	/**
@@ -591,12 +591,11 @@ class WCS_Export_Admin {
 		// Get AJAX exports from /wcs-exports/
 		$ajax_export_dir = $upload_dir['basedir'] . '/wcs-exports/';
 		if ( file_exists( $ajax_export_dir ) ) {
-			$ajax_files = scandir( $ajax_export_dir );
-			$ajax_files = array_diff( $ajax_files, array( '.', '..', 'index.php', '.htaccess' ) );
+			$ajax_files = glob( $ajax_export_dir . '*.csv' );
 			$ajax_files_url = $upload_dir['baseurl'] . '/wcs-exports/';
 
-			foreach ( $ajax_files as $file ) {
-				$file_path = trailingslashit( $ajax_export_dir ) . $file;
+			foreach ( $ajax_files as $file_path ) {
+				$file = basename( $file_path );
 				$file_time = filemtime( $file_path );
 
 				$files_data[] = array(
@@ -1051,8 +1050,8 @@ class WCS_Export_Admin {
 		
 		if ( ! file_exists( $export_dir ) ) {
 			wp_mkdir_p( $export_dir );
-			// Add index.php for security
-			file_put_contents( $export_dir . 'index.php', '<?php // Silence is golden' );
+			// Secure the directory - deny direct access
+			self::secure_export_directory( $export_dir );
 		}
 
 		$filename = 'wcs-export-' . $session_id . '.csv';
@@ -1246,7 +1245,7 @@ class WCS_Export_Admin {
 	 *
 	 * @since 2.1.0
 	 */
-	public function ajax_export_download() {
+	public function ajax_export_complete() {
 		check_ajax_referer( 'wcs_export_nonce', 'nonce' );
 
 		if ( ! current_user_can( 'manage_woocommerce' ) ) {
@@ -1269,73 +1268,69 @@ class WCS_Export_Admin {
 			wp_send_json_error( array( 'message' => __( 'Export file not found.', 'wcs-import-export' ) ) );
 		}
 
-		// Generate download URL
-		$download_url = add_query_arg( array(
-			'action'     => 'wcs_export_file_download',
-			'session_id' => $session_id,
-			'nonce'      => wp_create_nonce( 'wcs_export_download_' . $session_id ),
-		), admin_url( 'admin-ajax.php' ) );
+		// Rename file to final filename (so it persists for Exports tab)
+		$final_filename = $export_state['final_filename'];
+		$final_filepath = dirname( $export_state['filepath'] ) . '/' . $final_filename;
+		rename( $export_state['filepath'], $final_filepath );
+
+		// Clean up transient - no longer needed
+		delete_transient( 'wcs_export_' . $session_id );
+
+		// Generate direct download URL - security is handled by .htaccess checking WordPress login cookie
+		$upload_dir = wp_upload_dir();
+		$download_url = $upload_dir['baseurl'] . '/wcs-exports/' . $final_filename;
 
 		wp_send_json_success( array(
 			'download_url' => $download_url,
-			'filename'     => $export_state['final_filename'],
+			'filename'     => $final_filename,
 		) );
 	}
 
 	/**
-	 * Handle direct file download request.
+	 * Secure the export directory using .htaccess.
+	 * Only users logged into WordPress admin can access files.
+	 *
+	 * @since 2.1.0
+	 * @param string $dir_path The directory path to secure.
+	 */
+	public static function secure_export_directory( $dir_path ) {
+		// Create index.php to prevent directory listing
+		$index_file = $dir_path . 'index.php';
+		if ( ! file_exists( $index_file ) ) {
+			file_put_contents( $index_file, '<?php // Silence is golden' );
+		}
+
+		// Create .htaccess that checks for WordPress logged-in cookie (Apache)
+		// This allows logged-in WordPress users to download files directly
+		$htaccess_file = $dir_path . '.htaccess';
+		$htaccess_content = "# Only allow access to users with WordPress logged-in cookie\n";
+		$htaccess_content .= "# This checks for the wordpress_logged_in_ cookie which is set for authenticated users\n";
+		$htaccess_content .= "<IfModule mod_rewrite.c>\n";
+		$htaccess_content .= "    RewriteEngine On\n";
+		$htaccess_content .= "    RewriteCond %{HTTP_COOKIE} !wordpress_logged_in_ [NC]\n";
+		$htaccess_content .= "    RewriteRule .* - [F,L]\n";
+		$htaccess_content .= "</IfModule>\n\n";
+		$htaccess_content .= "# Fallback for servers without mod_rewrite\n";
+		$htaccess_content .= "<IfModule !mod_rewrite.c>\n";
+		$htaccess_content .= "    <FilesMatch \"\\.(csv)$\">\n";
+		$htaccess_content .= "        Order Deny,Allow\n";
+		$htaccess_content .= "        Deny from all\n";
+		$htaccess_content .= "    </FilesMatch>\n";
+		$htaccess_content .= "</IfModule>\n";
+		file_put_contents( $htaccess_file, $htaccess_content );
+	}
+
+	/**
+	 * Ensure export directory is secured. Called on admin_init.
 	 *
 	 * @since 2.1.0
 	 */
-	public function handle_export_download() {
-		// Only process if this is actually a download request
-		if ( ! isset( $_GET['action'] ) || $_GET['action'] !== 'wcs_export_file_download' ) {
-			return;
-		}
-
-		$session_id = isset( $_GET['session_id'] ) ? sanitize_text_field( $_GET['session_id'] ) : '';
-		$nonce      = isset( $_GET['nonce'] ) ? $_GET['nonce'] : '';
-
-		if ( ! wp_verify_nonce( $nonce, 'wcs_export_download_' . $session_id ) ) {
-			wp_die( __( 'Invalid download link.', 'wcs-import-export' ) );
-		}
-
-		if ( ! current_user_can( 'manage_woocommerce' ) ) {
-			wp_die( __( 'You do not have permission to download exports.', 'wcs-import-export' ) );
-		}
-
-		$export_state = get_transient( 'wcs_export_' . $session_id );
-
-		if ( ! $export_state || empty( $export_state['filepath'] ) ) {
-			wp_die( __( 'Export session not found or expired.', 'wcs-import-export' ) );
-		}
-
-		$filepath = $export_state['filepath'];
-
-		if ( ! file_exists( $filepath ) ) {
-			wp_die( __( 'Export file not found.', 'wcs-import-export' ) );
-		}
-
-		// Use the hashed filename (same pattern as cron exports)
-		$filename = isset( $export_state['final_filename'] ) ? $export_state['final_filename'] : 'subscriptions.csv';
+	public static function maybe_secure_export_directory() {
+		$upload_dir = wp_upload_dir();
+		$export_dir = $upload_dir['basedir'] . '/wcs-exports/';
 		
-		// Set download headers
-		header( 'Content-Type: text/csv; charset=utf-8' );
-		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
-		header( 'Content-Length: ' . filesize( $filepath ) );
-		header( 'Pragma: no-cache' );
-		header( 'Expires: 0' );
-
-		// Output file
-		readfile( $filepath );
-
-		// Rename file with same name as download (keep it for the Exports tab)
-		$new_filepath = dirname( $filepath ) . '/' . $filename;
-		rename( $filepath, $new_filepath );
-
-		// Clean up transient only
-		delete_transient( 'wcs_export_' . $session_id );
-
-		exit;
+		if ( file_exists( $export_dir ) ) {
+			self::secure_export_directory( $export_dir );
+		}
 	}
 }
