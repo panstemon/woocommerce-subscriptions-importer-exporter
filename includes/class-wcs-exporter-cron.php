@@ -121,7 +121,7 @@ class WCS_Exporter_Cron {
         $cron_page_url = add_query_arg( 
             array( 
                 'page' => 'export_subscriptions',
-                'tab'  => 'wcsi-cron-exports'
+                'tab'  => 'wcsi-exports'
             ), 
             admin_url( 'admin.php' ) 
         );

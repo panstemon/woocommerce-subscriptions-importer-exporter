@@ -221,7 +221,7 @@ class WCS_Export_Admin {
 		$tabs = array(
 			'wcsi-export'       => __( 'Export', 'wcs-import-export' ),
 			'wcsi-headers'      => __( 'CSV Headers', 'wcs-import-export' ),
-			'wcsi-cron-exports' => __( 'Cron exports', 'wcs-import-export' )
+			'wcsi-exports'      => __( 'Exports', 'wcs-import-export' )
 		);
 
 		$current_tab = ( empty( $_GET['tab'] ) ) ? 'wcsi-export' : sanitize_text_field( $_GET['tab'] );
@@ -539,87 +539,122 @@ class WCS_Export_Admin {
 	}
 
 	/**
-	 * Export crons page
+	 * Export files page
 	 *
-	 * Display a list of all the crons preparing exports.
+	 * Display a list of all completed and processing exports (both cron and AJAX).
 	 *
 	 * @since 2.0-beta
 	 */
 	public function export_crons() {
 
-		$files = array();
 		$files_data = array();
+		$upload_dir = wp_upload_dir();
+		$datetime_format = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
 
-		if ( file_exists(WCS_Exporter_Cron::$cron_dir) ) {
-			$files = scandir(WCS_Exporter_Cron::$cron_dir);
-		}
+		// Get cron exports from /woocommerce-subscriptions-importer-exporter/
+		if ( file_exists( WCS_Exporter_Cron::$cron_dir ) ) {
+			$cron_files = scandir( WCS_Exporter_Cron::$cron_dir );
+			$cron_files = array_diff( $cron_files, array( '.', '..', 'index.php', '.htaccess' ) );
+			$cron_files_url = $upload_dir['baseurl'] . '/woocommerce-subscriptions-importer-exporter/';
 
-		if ( !empty($files) ) {
+			foreach ( $cron_files as $file ) {
+				$file_path = trailingslashit( WCS_Exporter_Cron::$cron_dir ) . $file;
+				$file_time = filemtime( $file_path );
 
-			$files      = array_diff( $files, array('.', '..', 'index.php', '.htaccess' ) );
-			$upload_dir = wp_upload_dir();
-			$files_url  = $upload_dir['baseurl'] . '/woocommerce-subscriptions-importer-exporter/';
-
-			// Get the site's date and time format settings.
-			$datetime_format = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
-
-			foreach ( $files as $file ) {
-
-				// set status
+				// Set status
 				$status = 'completed';
-				if ( strpos($file, 'tmp') !== false ) {
+				if ( strpos( $file, 'tmp' ) !== false ) {
 					$status = 'processing';
 				}
 
-				$file_data = array(
-					'name'   => $file,
-					'url'    => $files_url . $file,
-					'status' => $status,
-					'date'   => date_i18n( $datetime_format, absint( filectime( trailingslashit( WCS_Exporter_Cron::$cron_dir ) . $file ) ) ),
+				$files_data[] = array(
+					'name'      => $file,
+					'url'       => $cron_files_url . $file,
+					'status'    => $status,
+					'type'      => 'cron',
+					'date'      => date_i18n( $datetime_format, $file_time ),
+					'timestamp' => $file_time,
 				);
-
-				$files_data[] = $file_data;
 			}
 		}
+
+		// Get AJAX exports from /wcs-exports/
+		$ajax_export_dir = $upload_dir['basedir'] . '/wcs-exports/';
+		if ( file_exists( $ajax_export_dir ) ) {
+			$ajax_files = scandir( $ajax_export_dir );
+			$ajax_files = array_diff( $ajax_files, array( '.', '..', 'index.php', '.htaccess' ) );
+			$ajax_files_url = $upload_dir['baseurl'] . '/wcs-exports/';
+
+			foreach ( $ajax_files as $file ) {
+				$file_path = trailingslashit( $ajax_export_dir ) . $file;
+				$file_time = filemtime( $file_path );
+
+				$files_data[] = array(
+					'name'      => $file,
+					'url'       => $ajax_files_url . $file,
+					'status'    => 'completed',
+					'type'      => 'ajax',
+					'date'      => date_i18n( $datetime_format, $file_time ),
+					'timestamp' => $file_time,
+				);
+			}
+		}
+
+		// Sort by timestamp (newest first)
+		if ( ! empty( $files_data ) ) {
+			usort( $files_data, function( $a, $b ) {
+				return $b['timestamp'] - $a['timestamp'];
+			} );
+		}
 		?>
-		<table class="widefat widefat_crons striped" id="wcsi-cron-exports-table" style="display:none;">
+		<table class="widefat widefat_crons striped" id="wcsi-exports-table" style="display:none;">
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'File', 'wcs-import-export' ); ?></th>
 					<th><?php esc_html_e( 'Date', 'wcs-import-export' ); ?></th>
+					<th><?php esc_html_e( 'Type', 'wcs-import-export' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'wcs-import-export' ); ?></th>
 					<th></th>
 				</tr>
 			</thead>
-			<?php if ( empty($files_data) ): ?>
+			<?php if ( empty( $files_data ) ) : ?>
 				<tbody>
 					<tr>
-						<td colspan="3"><?php esc_html_e( 'There are no files completed or processing.', 'wcs-import-export' ); ?></td>
+						<td colspan="5"><?php esc_html_e( 'There are no export files.', 'wcs-import-export' ); ?></td>
 					</tr>
 				</tbody>
-			<?php else: ?>
+			<?php else : ?>
 				<tbody>
-					<?php foreach ( $files_data as $file_data ): ?>
+					<?php foreach ( $files_data as $file_data ) : ?>
 						<tr>
 							<td>
-								<?php if ( $file_data['status'] == 'processing' ): ?>
-									<?php echo $file_data['name']; ?>
-								<?php else: ?>
-									<a href="<?php echo $file_data['url']; ?>"><?php echo $file_data['name']; ?></a>
+								<?php if ( $file_data['status'] === 'processing' ) : ?>
+									<?php echo esc_html( $file_data['name'] ); ?>
+								<?php else : ?>
+									<a href="<?php echo esc_url( $file_data['url'] ); ?>"><?php echo esc_html( $file_data['name'] ); ?></a>
 								<?php endif; ?>
 							</td>
-							<td><?php echo $file_data['date']; ?></td>
+							<td><?php echo esc_html( $file_data['date'] ); ?></td>
 							<td>
 								<?php
-									if ( $file_data['status'] == 'processing' ) {
-										esc_html_e( 'Processing', 'wcs-import-export' );
-									} else {
-										esc_html_e( 'Completed', 'wcs-import-export' );
-									}
+								if ( $file_data['type'] === 'cron' ) {
+									esc_html_e( 'Cron', 'wcs-import-export' );
+								} else {
+									esc_html_e( 'Browser', 'wcs-import-export' );
+								}
+								?>
+							</td>
+							<td>
+								<?php
+								if ( $file_data['status'] === 'processing' ) {
+									echo '<span style="color: #d63638;">' . esc_html__( 'Processing', 'wcs-import-export' ) . '</span>';
+								} else {
+									echo '<span style="color: #00a32a;">' . esc_html__( 'Completed', 'wcs-import-export' ) . '</span>';
+								}
 								?>
 							</td>
 							<td align="right">
-								<a class="button" href="<?php echo wp_nonce_url(admin_url('admin.php?page=export_subscriptions&delete_export=' . $file_data['name']), 'delete_export', '_wpnonce'); ?>" onclick="return confirm('<?php esc_html_e( 'Are you sure you want to delete this export?', 'wcs-import-export' ); ?>')"><?php esc_html_e( 'Delete', 'wcs-import-export' ); ?></a>
+								<a class="button" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin.php?page=export_subscriptions&delete_export=' . $file_data['name'] . '&export_type=' . $file_data['type'] ), 'delete_export', '_wpnonce' ) ); ?>" onclick="return confirm('<?php esc_attr_e( 'Are you sure you want to delete this export?', 'wcs-import-export' ); ?>')"><?php esc_html_e( 'Delete', 'wcs-import-export' ); ?></a>
 							</td>
 						</tr>
 					<?php endforeach; ?>
@@ -832,15 +867,31 @@ class WCS_Export_Admin {
 	}
 
 	/**
-	 * Function to remove a cron export file.
+	 * Function to remove an export file.
 	 *
 	 * @since 2.0-beta
-	 * @param array $headers
 	 */
 	public function process_cron_export_delete() {
-		if ( isset($_GET['delete_export']) && isset($_GET['_wpnonce']) && wp_verify_nonce($_GET['_wpnonce'], 'delete_export')) {
-			WCS_Exporter_Cron::delete_export_file($_GET['delete_export']);
-			wp_redirect( admin_url('admin.php?page=export_subscriptions&tab=wcsi-cron-exports&cron_deleted=true') );
+		if ( isset( $_GET['delete_export'] ) && isset( $_GET['_wpnonce'] ) && wp_verify_nonce( $_GET['_wpnonce'], 'delete_export' ) ) {
+			$file_name   = sanitize_file_name( $_GET['delete_export'] );
+			$export_type = isset( $_GET['export_type'] ) ? sanitize_text_field( $_GET['export_type'] ) : 'cron';
+
+			if ( $export_type === 'ajax' ) {
+				// Delete from AJAX exports directory
+				$upload_dir = wp_upload_dir();
+				$ajax_export_dir = $upload_dir['basedir'] . '/wcs-exports/';
+				$file_path = $ajax_export_dir . $file_name;
+				
+				if ( file_exists( $file_path ) ) {
+					unlink( $file_path );
+				}
+			} else {
+				// Delete from cron exports directory
+				WCS_Exporter_Cron::delete_export_file( $file_name );
+			}
+
+			wp_redirect( admin_url( 'admin.php?page=export_subscriptions&tab=wcsi-exports&cron_deleted=true' ) );
+			exit;
 		}
 	}
 
@@ -871,7 +922,7 @@ class WCS_Export_Admin {
 						$this->process_download( $csv_headers );
 					} elseif ( 'cron-export' == $_GET['step'] ) {
 						$this->process_cron_export( $csv_headers );
-						wp_redirect( admin_url('admin.php?page=export_subscriptions&tab=wcsi-cron-exports&cron_started=true') );
+						wp_redirect( admin_url('admin.php?page=export_subscriptions&tab=wcsi-exports&cron_started=true') );
 						exit();
 					}
 				} else {
@@ -904,7 +955,7 @@ class WCS_Export_Admin {
 		if ( isset($_GET["cron_started"]) && $_GET["cron_started"] == "true") {
 			?>
 			<div class="notice notice-success is-dismissible">
-				<p><?php echo __( 'The export is scheduled. You can see the status and download the file on the "Cron export" tab.', 'wcs-import-export' ); ?></p>
+				<p><?php echo __( 'The export is scheduled. You can see the status and download the file on the "Exports" tab.', 'wcs-import-export' ); ?></p>
 			</div>
 			<?php
 		}
@@ -1018,6 +1069,15 @@ class WCS_Export_Admin {
 
 		fclose( $file );
 
+		// Get user's custom filename and apply hash (same pattern as cron exports)
+		$original_filename = isset( $form_data['filename'] ) ? sanitize_file_name( $form_data['filename'] ) : 'subscriptions.csv';
+		$file_extension    = pathinfo( $original_filename, PATHINFO_EXTENSION );
+		if ( empty( $file_extension ) ) {
+			$file_extension = 'csv';
+		}
+		$handle            = str_replace( '.' . $file_extension, '', $original_filename );
+		$final_filename    = $handle . '-' . wp_hash( time() . $handle ) . '.' . $file_extension;
+
 		// Store export state in transient
 		$export_state = array(
 			'session_id'       => $session_id,
@@ -1026,6 +1086,7 @@ class WCS_Export_Admin {
 			'export_format'    => $export_format,
 			'filepath'         => $filepath,
 			'filename'         => $filename,
+			'final_filename'   => $final_filename,
 			'processed'        => 0,
 			'total'            => $total_subscriptions,
 			'form_data'        => $form_data,
@@ -1207,7 +1268,7 @@ class WCS_Export_Admin {
 
 		wp_send_json_success( array(
 			'download_url' => $download_url,
-			'filename'     => 'wcs-subscriptions-export-' . date( 'Y-m-d-His' ) . '.csv',
+			'filename'     => $export_state['final_filename'],
 		) );
 	}
 
@@ -1245,9 +1306,10 @@ class WCS_Export_Admin {
 			wp_die( __( 'Export file not found.', 'wcs-import-export' ) );
 		}
 
-		// Set download headers
-		$filename = 'wcs-subscriptions-export-' . date( 'Y-m-d-His' ) . '.csv';
+		// Use the hashed filename (same pattern as cron exports)
+		$filename = isset( $export_state['final_filename'] ) ? $export_state['final_filename'] : 'subscriptions.csv';
 		
+		// Set download headers
 		header( 'Content-Type: text/csv; charset=utf-8' );
 		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
 		header( 'Content-Length: ' . filesize( $filepath ) );
@@ -1257,8 +1319,11 @@ class WCS_Export_Admin {
 		// Output file
 		readfile( $filepath );
 
-		// Clean up
-		unlink( $filepath );
+		// Rename file with same name as download (keep it for the Exports tab)
+		$new_filepath = dirname( $filepath ) . '/' . $filename;
+		rename( $filepath, $new_filepath );
+
+		// Clean up transient only
 		delete_transient( 'wcs_export_' . $session_id );
 
 		exit;

@@ -24,7 +24,7 @@ jQuery(document).ready(function($){
 		$('#' + tabId + '-table').show();
 
 		// Show/hide submit buttons based on tab
-		if (tabId === 'wcsi-cron-exports') {
+		if (tabId === 'wcsi-exports') {
 			$('.wcsi-exporter-form .submit').hide();
 		} else {
 			$('.wcsi-exporter-form .submit').show();
