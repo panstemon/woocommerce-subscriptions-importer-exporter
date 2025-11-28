@@ -1,20 +1,57 @@
 jQuery(document).ready(function($){
 
-	// show/hide tables depending on the tabs chosen
-	$('.wcsi-exporter-tabs').click(function(e) {
-		e.preventDefault();
+	// Get current tab from URL
+	function getCurrentTabFromUrl() {
+		var urlParams = new URLSearchParams(window.location.search);
+		return urlParams.get('tab') || 'wcsi-export';
+	}
 
+	// Update URL without page reload
+	function updateUrlTab(tabId) {
+		var url = new URL(window.location.href);
+		url.searchParams.set('tab', tabId);
+		window.history.pushState({tab: tabId}, '', url);
+	}
+
+	// Show the correct tab content
+	function showTab(tabId) {
+		// Update tab styling
 		$('.wcsi-exporter-tabs').removeClass('nav-tab-active');
-		$(this).addClass('nav-tab-active');
+		$('.wcsi-exporter-tabs[data-tab="' + tabId + '"]').addClass('nav-tab-active');
 
+		// Hide all tables, show the selected one
 		$('.wcsi-exporter-form table').hide();
-		$('#' + $(this).attr('id') + '-table').show();
+		$('#' + tabId + '-table').show();
 
-		if ( $( this ).attr( 'id' ) == 'wcsi-crons' ) {
+		// Show/hide submit buttons based on tab
+		if (tabId === 'wcsi-cron-exports') {
 			$('.wcsi-exporter-form .submit').hide();
 		} else {
 			$('.wcsi-exporter-form .submit').show();
 		}
+	}
+
+	// Initialize: show correct tab on page load
+	var initialTab = getCurrentTabFromUrl();
+	showTab(initialTab);
+
+	// Handle tab clicks
+	$('.wcsi-exporter-tabs').click(function(e) {
+		e.preventDefault();
+		
+		var tabId = $(this).data('tab') || $(this).attr('id');
+		
+		// Update URL
+		updateUrlTab(tabId);
+		
+		// Show the tab
+		showTab(tabId);
+	});
+
+	// Handle browser back/forward buttons
+	$(window).on('popstate', function(e) {
+		var tabId = getCurrentTabFromUrl();
+		showTab(tabId);
 	});
 
 	// multiple action for the form
@@ -37,7 +74,7 @@ jQuery(document).ready(function($){
 	function toggleAppstleFormatUI() {
 		var exportFormat = $('#export_format').val();
 		var appstleNote = $('#appstle-format-note');
-		var headersTab = $('#wcsi-headers');
+		var headersTab = $('.wcsi-exporter-tabs[data-tab="wcsi-headers"]');
 
 		if (exportFormat === 'appstle') {
 			appstleNote.show();

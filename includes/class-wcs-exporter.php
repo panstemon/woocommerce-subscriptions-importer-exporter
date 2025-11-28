@@ -776,6 +776,31 @@ class WCS_Exporter {
 			return; // Appstle export requires Shopify API
 		}
 
+		$rows = self::get_appstle_row_data( $subscription, $shopify_api );
+		foreach ( $rows as $csv_row ) {
+			self::write( $csv_row );
+		}
+	}
+
+	/**
+	 * Get Appstle row data for a subscription (returns array of rows, one per line item).
+	 *
+	 * @since 2.1.0
+	 * @param WC_Subscription $subscription
+	 * @param WCS_Shopify_API|null $shopify_api
+	 * @return array Array of row arrays (one per line item)
+	 */
+	public static function get_appstle_row_data( $subscription, $shopify_api = null ) {
+		if ( ! $shopify_api ) {
+			$shopify_api = self::get_shopify_api();
+		}
+
+		if ( ! $shopify_api || ! $shopify_api->is_configured() ) {
+			return array(); // Appstle export requires Shopify API
+		}
+
+		$rows = array();
+
 		// Get subscription data
 		if ( version_compare( WC()->version, '3.0', '>=' ) ) {
 			$billing_email     = $subscription->get_billing_email();
@@ -887,8 +912,10 @@ class WCS_Exporter {
 
 			$csv_row = apply_filters( 'wcsie_format_appstle_csv_row', $csv_row, $subscription, $item );
 
-			self::write( $csv_row );
+			$rows[] = array_values( $csv_row );
 		}
+
+		return $rows;
 	}
 
 }

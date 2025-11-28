@@ -89,10 +89,75 @@ class WCS_Exporter_Cron {
         }
 
         if ( $done_export === true ) {
-            rename($file_path, str_replace('.tmp', '', $file_path));
+            $final_file_path = str_replace('.tmp', '', $file_path);
+            rename($file_path, $final_file_path);
+            
+            // Send notification email if configured
+            if ( ! empty( $post_data['notification_email'] ) ) {
+                self::send_completion_notification( $post_data['notification_email'], $post_data['filename'], $final_file_path );
+            }
         }
 
         fclose($file);
+    }
+
+    /**
+     * Send email notification when export completes
+     *
+     * @since 2.1.0
+     * @param string $email
+     * @param string $filename
+     * @param string $file_path
+     */
+    public static function send_completion_notification( $email, $filename, $file_path ) {
+        $site_name = get_bloginfo( 'name' );
+        $final_filename = str_replace( '.tmp', '', $filename );
+        
+        // Get download URL
+        $upload_dir = wp_upload_dir();
+        $download_url = $upload_dir['baseurl'] . '/woocommerce-subscriptions-importer-exporter/' . $final_filename;
+        
+        // Get cron exports page URL
+        $cron_page_url = add_query_arg( 
+            array( 
+                'page' => 'export_subscriptions',
+                'tab'  => 'wcsi-cron-exports'
+            ), 
+            admin_url( 'admin.php' ) 
+        );
+        
+        // Email subject
+        $subject = sprintf( 
+            /* translators: %s: site name */
+            __( '[%s] Subscription Export Completed', 'wcs-import-export' ), 
+            $site_name 
+        );
+        
+        // Email body
+        $message = sprintf( 
+            /* translators: %s: site name */
+            __( 'Your subscription export on %s has completed successfully.', 'wcs-import-export' ), 
+            $site_name 
+        ) . "\n\n";
+        
+        $message .= __( 'Export Details:', 'wcs-import-export' ) . "\n";
+        $message .= '-----------------------------------' . "\n";
+        $message .= sprintf( __( 'Filename: %s', 'wcs-import-export' ), $final_filename ) . "\n";
+        $message .= sprintf( __( 'Completed at: %s', 'wcs-import-export' ), current_time( 'mysql' ) ) . "\n\n";
+        
+        $message .= __( 'Download your export file:', 'wcs-import-export' ) . "\n";
+        $message .= $download_url . "\n\n";
+        
+        $message .= __( 'View all cron exports:', 'wcs-import-export' ) . "\n";
+        $message .= $cron_page_url . "\n\n";
+        
+        $message .= '-----------------------------------' . "\n";
+        $message .= __( 'Note: This is an automated message. Please do not reply.', 'wcs-import-export' ) . "\n";
+        
+        // Send email
+        $headers = array( 'Content-Type: text/plain; charset=UTF-8' );
+        
+        wp_mail( $email, $subject, $message, $headers );
     }
 
     /**

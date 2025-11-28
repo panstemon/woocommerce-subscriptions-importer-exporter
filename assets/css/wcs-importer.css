@@ -110,3 +110,124 @@
 #wcsi-completed-message {
 	display:none;
 }
+
+/* Export Progress Styles */
+.wcs-export-progress {
+	margin-top: 20px;
+	padding: 20px;
+	background: #fff;
+	border: 1px solid #ccd0d4;
+	box-shadow: 0 1px 1px rgba(0,0,0,.04);
+}
+
+.wcs-export-progress h3 {
+	margin: 0 0 15px;
+	padding: 0;
+	font-size: 18px;
+	font-weight: 600;
+}
+
+.wcs-warning-box {
+	background: #fff3cd;
+	border: 1px solid #ffc107;
+	border-left: 4px solid #ffc107;
+	color: #856404;
+	padding: 12px 15px;
+	margin-bottom: 20px;
+	font-weight: 600;
+	display: flex;
+	align-items: center;
+}
+
+.wcs-warning-box::before {
+	content: "⚠";
+	font-size: 20px;
+	margin-right: 10px;
+}
+
+.wcs-progress-bar-container {
+	background: #f0f0f1;
+	border-radius: 4px;
+	height: 30px;
+	margin-bottom: 20px;
+	position: relative;
+	overflow: hidden;
+}
+
+.wcs-progress-bar {
+	background: linear-gradient(to right, #0073aa, #00a0d2);
+	height: 100%;
+	width: 0;
+	border-radius: 4px;
+	transition: width 0.3s ease;
+}
+
+.wcs-progress-text {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	font-weight: 600;
+	color: #1e1e1e;
+	text-shadow: 0 0 3px rgba(255,255,255,0.8);
+}
+
+.wcs-stats-grid {
+	display: grid;
+	grid-template-columns: repeat(5, 1fr);
+	gap: 15px;
+	margin-bottom: 20px;
+}
+
+.wcs-stat-item {
+	background: #f6f7f7;
+	padding: 15px;
+	border-radius: 4px;
+	text-align: center;
+}
+
+.wcs-stat-label {
+	font-size: 12px;
+	color: #646970;
+	text-transform: uppercase;
+	margin-bottom: 5px;
+}
+
+.wcs-stat-value {
+	font-size: 24px;
+	font-weight: 600;
+	color: #1e1e1e;
+}
+
+#wcs-export-cancel {
+	background: #dc3232;
+	border-color: #dc3232;
+	color: #fff;
+	padding: 8px 20px;
+	font-size: 14px;
+}
+
+#wcs-export-cancel:hover {
+	background: #c32121;
+	border-color: #c32121;
+}
+
+.wcs-export-status {
+	margin-top: 15px;
+	padding: 10px;
+	background: #f6f7f7;
+	border-radius: 4px;
+	font-style: italic;
+	color: #646970;
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 782px) {
+	.wcs-stats-grid {
+		grid-template-columns: repeat(2, 1fr);
+	}
+	
+	.wcs-stat-item:last-child {
+		grid-column: span 2;
+	}
+}
