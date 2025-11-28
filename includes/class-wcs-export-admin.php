@@ -404,18 +404,28 @@ class WCS_Export_Admin {
 						</td>
 					</tr>
 					<tr>
-						<td colspan="2"><strong><?php esc_html_e( 'Shopify Integration (Optional)', 'wcs-import-export' ); ?></strong></td>
-					</tr>
-					<tr>
-						<td colspan="2" style="padding: 10px; background: #f9f9f9; border-left: 4px solid #0073aa;">
-							<strong><?php esc_html_e( 'Important:', 'wcs-import-export' ); ?></strong> <?php esc_html_e( 'To use Shopify integration, you must enable the woo.id metafield for filtering in Shopify Admin:', 'wcs-import-export' ); ?><br>
-							<ol style="margin: 10px 0 10px 20px;">
-								<li><?php esc_html_e( 'Go to Shopify Admin > Settings > Custom data', 'wcs-import-export' ); ?></li>
-								<li><?php esc_html_e( 'Click on Products (and/or Variants)', 'wcs-import-export' ); ?></li>
-								<li><?php esc_html_e( 'Find and click on the woo.id metafield definition', 'wcs-import-export' ); ?></li>
-								<li><?php esc_html_e( 'Enable "Storefront Filtering" option and save', 'wcs-import-export' ); ?></li>
-							</ol>
-							<?php esc_html_e( 'Without this, product matching via GraphQL will not work.', 'wcs-import-export' ); ?>
+						<td colspan="2">
+							<strong><?php esc_html_e( 'Shopify Integration (Optional)', 'wcs-import-export' ); ?></strong>
+							<a href="#" id="shopify-setup-toggle" style="margin-left: 10px; font-size: 12px;"><?php esc_html_e( 'Setup instructions ▼', 'wcs-import-export' ); ?></a>
+							<div id="shopify-setup-instructions" style="display: none; margin-top: 10px; padding: 10px; background: #f9f9f9; border-left: 4px solid #0073aa;">
+								<strong><?php esc_html_e( 'Important:', 'wcs-import-export' ); ?></strong> <?php esc_html_e( 'To use Shopify integration, you must enable the woo.id metafield for filtering in Shopify Admin:', 'wcs-import-export' ); ?><br>
+								<ol style="margin: 10px 0 10px 20px;">
+									<li><?php esc_html_e( 'Go to Shopify Admin > Settings > Custom data', 'wcs-import-export' ); ?></li>
+									<li><?php esc_html_e( 'Click on Products (and/or Variants)', 'wcs-import-export' ); ?></li>
+									<li><?php esc_html_e( 'Find and click on the woo.id metafield definition', 'wcs-import-export' ); ?></li>
+									<li><?php esc_html_e( 'Enable "Storefront Filtering" option and save', 'wcs-import-export' ); ?></li>
+								</ol>
+								<?php esc_html_e( 'Without this, product matching via GraphQL will not work.', 'wcs-import-export' ); ?>
+							</div>
+							<script>
+								document.getElementById('shopify-setup-toggle').addEventListener('click', function(e) {
+									e.preventDefault();
+									var instructions = document.getElementById('shopify-setup-instructions');
+									var isHidden = instructions.style.display === 'none';
+									instructions.style.display = isHidden ? 'block' : 'none';
+									this.textContent = isHidden ? '<?php echo esc_js( __( 'Setup instructions ▲', 'wcs-import-export' ) ); ?>' : '<?php echo esc_js( __( 'Setup instructions ▼', 'wcs-import-export' ) ); ?>';
+								});
+							</script>
 						</td>
 					</tr>
 					<tr>
