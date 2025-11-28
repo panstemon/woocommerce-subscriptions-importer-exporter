@@ -111,14 +111,19 @@ class WCS_Exporter_Cron {
      */
     public static function send_completion_notification( $email, $filename, $file_path ) {
         $site_name = get_bloginfo( 'name' );
+        $site_url = get_bloginfo( 'url' );
         $final_filename = str_replace( '.tmp', '', $filename );
+        $admin_email = get_option( 'admin_email' );
+        
+        // Get file size
+        $file_size = file_exists( $file_path ) ? size_format( filesize( $file_path ) ) : __( 'Unknown', 'wcs-import-export' );
         
         // Get download URL
         $upload_dir = wp_upload_dir();
         $download_url = $upload_dir['baseurl'] . '/woocommerce-subscriptions-importer-exporter/' . $final_filename;
         
-        // Get cron exports page URL
-        $cron_page_url = add_query_arg( 
+        // Get exports page URL
+        $exports_page_url = add_query_arg( 
             array( 
                 'page' => 'export_subscriptions',
                 'tab'  => 'wcsi-exports'
@@ -133,29 +138,111 @@ class WCS_Exporter_Cron {
             $site_name 
         );
         
-        // Email body
-        $message = sprintf( 
-            /* translators: %s: site name */
-            __( 'Your subscription export on %s has completed successfully.', 'wcs-import-export' ), 
-            $site_name 
-        ) . "\n\n";
+        // HTML Email body
+        $message = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, Oxygen, Ubuntu, sans-serif; background-color: #f5f5f5;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f5f5f5; padding: 40px 20px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background-color: #7f54b3; padding: 30px 40px; border-radius: 8px 8px 0 0;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
+                                ✓ ' . esc_html__( 'Export Completed', 'wcs-import-export' ) . '
+                            </h1>
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 40px;">
+                            <p style="margin: 0 0 20px; color: #333333; font-size: 16px; line-height: 1.5;">
+                                ' . sprintf( esc_html__( 'Your subscription export on %s has completed successfully.', 'wcs-import-export' ), '<strong>' . esc_html( $site_name ) . '</strong>' ) . '
+                            </p>
+                            
+                            <!-- Export Details Box -->
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8f9fa; border-radius: 6px; margin-bottom: 30px;">
+                                <tr>
+                                    <td style="padding: 20px;">
+                                        <h3 style="margin: 0 0 15px; color: #333333; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">
+                                            ' . esc_html__( 'Export Details', 'wcs-import-export' ) . '
+                                        </h3>
+                                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                                <td style="padding: 8px 0; color: #666666; font-size: 14px; border-bottom: 1px solid #e0e0e0;">
+                                                    ' . esc_html__( 'Filename', 'wcs-import-export' ) . '
+                                                </td>
+                                                <td style="padding: 8px 0; color: #333333; font-size: 14px; text-align: right; border-bottom: 1px solid #e0e0e0;">
+                                                    <strong>' . esc_html( $final_filename ) . '</strong>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 8px 0; color: #666666; font-size: 14px; border-bottom: 1px solid #e0e0e0;">
+                                                    ' . esc_html__( 'File Size', 'wcs-import-export' ) . '
+                                                </td>
+                                                <td style="padding: 8px 0; color: #333333; font-size: 14px; text-align: right; border-bottom: 1px solid #e0e0e0;">
+                                                    ' . esc_html( $file_size ) . '
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 8px 0; color: #666666; font-size: 14px;">
+                                                    ' . esc_html__( 'Completed', 'wcs-import-export' ) . '
+                                                </td>
+                                                <td style="padding: 8px 0; color: #333333; font-size: 14px; text-align: right;">
+                                                    ' . esc_html( current_time( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ) ) ) . '
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Download Button -->
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 20px;">
+                                <tr>
+                                    <td align="center">
+                                        <a href="' . esc_url( $download_url ) . '" style="display: inline-block; background-color: #7f54b3; color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 6px; font-size: 16px; font-weight: 600;">
+                                            ⬇ ' . esc_html__( 'Download CSV File', 'wcs-import-export' ) . '
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Secondary Link -->
+                            <p style="margin: 0; text-align: center;">
+                                <a href="' . esc_url( $exports_page_url ) . '" style="color: #7f54b3; text-decoration: none; font-size: 14px;">
+                                    ' . esc_html__( 'View all exports in WordPress admin', 'wcs-import-export' ) . ' →
+                                </a>
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 20px 40px; background-color: #f8f9fa; border-radius: 0 0 8px 8px; border-top: 1px solid #e0e0e0;">
+                            <p style="margin: 0; color: #999999; font-size: 12px; text-align: center;">
+                                ' . esc_html__( 'This is an automated message from', 'wcs-import-export' ) . ' <a href="' . esc_url( $site_url ) . '" style="color: #7f54b3; text-decoration: none;">' . esc_html( $site_name ) . '</a>
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>';
         
-        $message .= __( 'Export Details:', 'wcs-import-export' ) . "\n";
-        $message .= '-----------------------------------' . "\n";
-        $message .= sprintf( __( 'Filename: %s', 'wcs-import-export' ), $final_filename ) . "\n";
-        $message .= sprintf( __( 'Completed at: %s', 'wcs-import-export' ), current_time( 'mysql' ) ) . "\n\n";
-        
-        $message .= __( 'Download your export file:', 'wcs-import-export' ) . "\n";
-        $message .= $download_url . "\n\n";
-        
-        $message .= __( 'View all cron exports:', 'wcs-import-export' ) . "\n";
-        $message .= $cron_page_url . "\n\n";
-        
-        $message .= '-----------------------------------' . "\n";
-        $message .= __( 'Note: This is an automated message. Please do not reply.', 'wcs-import-export' ) . "\n";
-        
-        // Send email
-        $headers = array( 'Content-Type: text/plain; charset=UTF-8' );
+        // Email headers
+        $headers = array(
+            'Content-Type: text/html; charset=UTF-8',
+            'From: ' . $site_name . ' <' . $admin_email . '>',
+        );
         
         wp_mail( $email, $subject, $message, $headers );
     }
