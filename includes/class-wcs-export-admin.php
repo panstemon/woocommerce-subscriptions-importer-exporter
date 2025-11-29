@@ -599,10 +599,14 @@ class WCS_Export_Admin {
 				$file = basename( $file_path );
 				$file_time = filemtime( $file_path );
 
+				// Check if this is a temp file (in-progress export)
+				// Temp files start with 'wcs-export-' and contain a session ID
+				$is_temp = ( strpos( $file, 'wcs-export-' ) === 0 );
+
 				$files_data[] = array(
 					'name'      => $file,
 					'url'       => self::get_secure_download_url( $file, 'ajax' ),
-					'status'    => 'completed',
+					'status'    => $is_temp ? 'processing' : 'completed',
 					'type'      => 'ajax',
 					'date'      => date_i18n( $datetime_format, $file_time ),
 					'timestamp' => $file_time,
