@@ -207,7 +207,7 @@ class WCS_Exporter_Cron {
                                 <tr>
                                     <td align="center">
                                         <a href="' . esc_url( $download_url ) . '" style="display: inline-block; background-color: #7f54b3; color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 6px; font-size: 16px; font-weight: 600;">
-                                            ⬇ ' . esc_html__( 'Download CSV File', 'wcs-import-export' ) . '
+                                            ⬇️ ' . esc_html__( 'Download CSV File', 'wcs-import-export' ) . '
                                         </a>
                                     </td>
                                 </tr>
