@@ -27,8 +27,14 @@ class WCS_Shopify_Settings {
 		// Handle the quick checkout link generation via AJAX
 		add_action( 'wp_ajax_wcs_generate_quick_checkout', array( __CLASS__, 'ajax_generate_quick_checkout' ) );
 		
+		// Handle cache clearing via AJAX
+		add_action( 'wp_ajax_wcs_clear_shopify_cache', array( __CLASS__, 'ajax_clear_shopify_cache' ) );
+		
 		// Add admin scripts for the modal
 		add_action( 'admin_footer', array( __CLASS__, 'add_admin_scripts' ) );
+		
+		// Add scripts for settings page cache button
+		add_action( 'admin_footer', array( __CLASS__, 'add_settings_scripts' ) );
 		
 		// Add metabox to single subscription page
 		add_action( 'add_meta_boxes', array( __CLASS__, 'add_quick_checkout_metabox' ) );
@@ -114,6 +120,16 @@ class WCS_Shopify_Settings {
 				'type' => 'sectionend',
 				'id'   => 'wcs_shopify_setup_instructions',
 			),
+			array(
+				'title' => __( 'Cache Management', 'wcs-import-export' ),
+				'type'  => 'title',
+				'desc'  => self::get_cache_management_html(),
+				'id'    => 'wcs_shopify_cache_management',
+			),
+			array(
+				'type' => 'sectionend',
+				'id'   => 'wcs_shopify_cache_management',
+			),
 		);
 
 		return $shopify_settings;
@@ -139,6 +155,107 @@ class WCS_Shopify_Settings {
 		</div>
 		<?php
 		return ob_get_clean();
+	}
+
+	/**
+	 * Get HTML for cache management section
+	 *
+	 * @return string HTML
+	 */
+	private static function get_cache_management_html() {
+		$cache_stats = WCS_Shopify_API::get_cache_stats();
+		$nonce = wp_create_nonce( 'wcs_clear_shopify_cache' );
+		
+		$html = '<div style="background: #f9f9f9; border-left: 4px solid #0073aa; padding: 15px; margin-top: 10px;">';
+		$html .= '<table class="wcs-cache-stats" style="margin-bottom: 10px;">';
+		$html .= '<tr>';
+		$html .= '<td style="padding: 2px 15px 2px 0;"><strong>' . esc_html__( 'Cached Items:', 'wcs-import-export' ) . '</strong></td>';
+		$html .= '<td style="padding: 2px 15px 2px 0;">' . sprintf( esc_html__( 'Products: %d', 'wcs-import-export' ), $cache_stats['product_count'] ) . '</td>';
+		$html .= '<td style="padding: 2px 0;">' . sprintf( esc_html__( 'Selling Plans: %d', 'wcs-import-export' ), $cache_stats['selling_plans_count'] ) . '</td>';
+		$html .= '</tr>';
+		$html .= '</table>';
+		$html .= '<p style="margin: 0 0 10px 0; color: #666;">' . esc_html__( 'Cache expires after 24 hours. Clear the cache if you have updated products in Shopify.', 'wcs-import-export' ) . '</p>';
+		$html .= '<button type="button" class="button" id="wcs-clear-shopify-cache" data-nonce="' . esc_attr( $nonce ) . '">' . esc_html__( 'Clear Shopify Cache', 'wcs-import-export' ) . '</button>';
+		$html .= '<span id="wcs-cache-clear-status" style="margin-left: 10px;"></span>';
+		$html .= '</div>';
+		
+		return $html;
+	}
+
+	/**
+	 * Add scripts for settings page cache button
+	 */
+	public static function add_settings_scripts() {
+		$screen = get_current_screen();
+
+		// Only load on WooCommerce settings page
+		if ( ! $screen || 'woocommerce_page_wc-settings' !== $screen->id ) {
+			return;
+		}
+
+		// Only load on Shopify Migration section
+		if ( ! isset( $_GET['section'] ) || 'shopify_migration' !== $_GET['section'] ) {
+			return;
+		}
+		?>
+		<script>
+		jQuery(document).ready(function($) {
+			$('#wcs-clear-shopify-cache').on('click', function() {
+				var $button = $(this);
+				var $status = $('#wcs-cache-clear-status');
+				var nonce = $button.data('nonce');
+				
+				$button.prop('disabled', true);
+				$status.html('<span class="spinner is-active" style="float: none; margin: 0;"></span>');
+				
+				$.ajax({
+					url: ajaxurl,
+					type: 'POST',
+					data: {
+						action: 'wcs_clear_shopify_cache',
+						nonce: nonce
+					},
+					success: function(response) {
+						if (response.success) {
+							$status.html('<span style="color: #00a32a;">\u2713 ' + response.data.message + '</span>');
+							setTimeout(function() {
+								location.reload();
+							}, 1500);
+						} else {
+							$status.html('<span style="color: #d63638;">\u2717 ' + response.data.message + '</span>');
+							$button.prop('disabled', false);
+						}
+					},
+					error: function() {
+						$status.html('<span style="color: #d63638;">\u2717 <?php echo esc_js( __( 'An error occurred.', 'wcs-import-export' ) ); ?></span>');
+						$button.prop('disabled', false);
+					}
+				});
+			});
+		});
+		</script>
+		<?php
+	}
+
+	/**
+	 * AJAX handler for clearing Shopify cache
+	 */
+	public static function ajax_clear_shopify_cache() {
+		check_ajax_referer( 'wcs_clear_shopify_cache', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Permission denied.', 'wcs-import-export' ) ) );
+		}
+
+		$count = WCS_Shopify_API::clear_all_transients();
+
+		wp_send_json_success( array(
+			'message' => sprintf(
+				/* translators: %d is the number of cache entries cleared */
+				__( 'Cache cleared successfully! %d entries removed.', 'wcs-import-export' ),
+				$count
+			),
+		) );
 	}
 
 	/**

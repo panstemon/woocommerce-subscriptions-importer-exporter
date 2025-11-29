@@ -30,14 +30,29 @@ class WCS_Shopify_API {
 	private $access_token;
 
 	/**
-	 * Cache for product lookups to minimize API calls
+	 * Transient key prefix for product cache
+	 */
+	const PRODUCT_CACHE_PREFIX = 'wcs_shopify_product_';
+
+	/**
+	 * Transient key prefix for selling plans cache
+	 */
+	const SELLING_PLANS_CACHE_PREFIX = 'wcs_shopify_plans_';
+
+	/**
+	 * Cache expiration time in seconds (24 hours)
+	 */
+	const CACHE_EXPIRATION = 86400;
+
+	/**
+	 * Runtime cache for product lookups (avoids repeated transient calls in same request)
 	 *
 	 * @var array
 	 */
 	private $product_cache = array();
 
 	/**
-	 * Cache for selling plans to minimize API calls
+	 * Runtime cache for selling plans (avoids repeated transient calls in same request)
 	 *
 	 * @var array
 	 */
@@ -175,9 +190,17 @@ class WCS_Shopify_API {
 	 * @return array|WP_Error Array with 'shopify_product_id' and 'shopify_variant_id', or error
 	 */
 	public function get_shopify_product_by_woo_id( $woo_product_id ) {
-		// Check cache first
+		// Check runtime cache first
 		if ( isset( $this->product_cache[ $woo_product_id ] ) ) {
 			return $this->product_cache[ $woo_product_id ];
+		}
+
+		// Check transient cache
+		$transient_key = self::PRODUCT_CACHE_PREFIX . $woo_product_id;
+		$cached_result = get_transient( $transient_key );
+		if ( false !== $cached_result ) {
+			$this->product_cache[ $woo_product_id ] = $cached_result;
+			return $cached_result;
 		}
 
 		// GraphQL query to find product by woo.id metafield
@@ -259,8 +282,9 @@ class WCS_Shopify_API {
 			'handle'             => isset( $matched_product['handle'] ) ? $matched_product['handle'] : '',
 		);
 
-		// Cache the result
+		// Cache the result in both runtime and transient cache
 		$this->product_cache[ $woo_product_id ] = $result;
+		set_transient( self::PRODUCT_CACHE_PREFIX . $woo_product_id, $result, self::CACHE_EXPIRATION );
 
 		return $result;
 	}
@@ -335,6 +359,7 @@ class WCS_Shopify_API {
 					);
 
 					$this->product_cache[ $woo_product_id ] = $result;
+					set_transient( self::PRODUCT_CACHE_PREFIX . $woo_product_id, $result, self::CACHE_EXPIRATION );
 					return $result;
 				}
 
@@ -350,6 +375,7 @@ class WCS_Shopify_API {
 							);
 
 							$this->product_cache[ $woo_product_id ] = $result;
+							set_transient( self::PRODUCT_CACHE_PREFIX . $woo_product_id, $result, self::CACHE_EXPIRATION );
 							return $result;
 						}
 					}
@@ -366,6 +392,7 @@ class WCS_Shopify_API {
 		);
 
 		$this->product_cache[ $woo_product_id ] = $result;
+		// Don't cache errors in transient - allow retry on next request
 		return $result;
 	}
 
@@ -377,10 +404,18 @@ class WCS_Shopify_API {
 	 * @return array|WP_Error
 	 */
 	public function get_shopify_variant_by_woo_id( $woo_product_id, $woo_variation_id ) {
-		// Check cache first using variation ID as key
+		// Check runtime cache first using variation ID as key
 		$cache_key = $woo_product_id . '_' . $woo_variation_id;
 		if ( isset( $this->product_cache[ $cache_key ] ) ) {
 			return $this->product_cache[ $cache_key ];
+		}
+
+		// Check transient cache
+		$transient_key = self::PRODUCT_CACHE_PREFIX . 'var_' . $cache_key;
+		$cached_result = get_transient( $transient_key );
+		if ( false !== $cached_result ) {
+			$this->product_cache[ $cache_key ] = $cached_result;
+			return $cached_result;
 		}
 
 		// First, try to find the parent product by woo.id and then match the variant
@@ -438,6 +473,7 @@ class WCS_Shopify_API {
 								);
 
 								$this->product_cache[ $cache_key ] = $result;
+								set_transient( self::PRODUCT_CACHE_PREFIX . 'var_' . $cache_key, $result, self::CACHE_EXPIRATION );
 								return $result;
 							}
 						}
@@ -454,6 +490,7 @@ class WCS_Shopify_API {
 						);
 
 						$this->product_cache[ $cache_key ] = $result;
+						set_transient( self::PRODUCT_CACHE_PREFIX . 'var_' . $cache_key, $result, self::CACHE_EXPIRATION );
 						return $result;
 					}
 				}
@@ -512,6 +549,7 @@ class WCS_Shopify_API {
 							);
 
 							$this->product_cache[ $cache_key ] = $result;
+							set_transient( self::PRODUCT_CACHE_PREFIX . 'var_' . $cache_key, $result, self::CACHE_EXPIRATION );
 							return $result;
 						}
 					}
@@ -532,6 +570,7 @@ class WCS_Shopify_API {
 					);
 
 					$this->product_cache[ $cache_key ] = $result;
+					set_transient( self::PRODUCT_CACHE_PREFIX . 'var_' . $cache_key, $result, self::CACHE_EXPIRATION );
 					return $result;
 				}
 			}
@@ -542,6 +581,7 @@ class WCS_Shopify_API {
 		
 		if ( ! is_wp_error( $parent_result ) && ! empty( $parent_result['shopify_product_id'] ) ) {
 			$this->product_cache[ $cache_key ] = $parent_result;
+			set_transient( self::PRODUCT_CACHE_PREFIX . 'var_' . $cache_key, $parent_result, self::CACHE_EXPIRATION );
 			return $parent_result;
 		}
 
@@ -574,11 +614,84 @@ class WCS_Shopify_API {
 	}
 
 	/**
-	 * Clear the product cache
+	 * Clear the product cache (runtime only)
 	 */
 	public function clear_cache() {
 		$this->product_cache = array();
 		$this->selling_plans_cache = array();
+	}
+
+	/**
+	 * Clear all Shopify transient caches from the database
+	 *
+	 * @return int Number of transients deleted
+	 */
+	public static function clear_all_transients() {
+		global $wpdb;
+
+		$count = 0;
+
+		// Delete product cache transients
+		$product_transients = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+				'_transient_' . self::PRODUCT_CACHE_PREFIX . '%',
+				'_transient_timeout_' . self::PRODUCT_CACHE_PREFIX . '%'
+			)
+		);
+
+		foreach ( $product_transients as $transient ) {
+			$key = str_replace( array( '_transient_', '_transient_timeout_' ), '', $transient );
+			if ( delete_transient( $key ) ) {
+				$count++;
+			}
+		}
+
+		// Delete selling plans cache transients
+		$plans_transients = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+				'_transient_' . self::SELLING_PLANS_CACHE_PREFIX . '%',
+				'_transient_timeout_' . self::SELLING_PLANS_CACHE_PREFIX . '%'
+			)
+		);
+
+		foreach ( $plans_transients as $transient ) {
+			$key = str_replace( array( '_transient_', '_transient_timeout_' ), '', $transient );
+			if ( delete_transient( $key ) ) {
+				$count++;
+			}
+		}
+
+		return $count;
+	}
+
+	/**
+	 * Get cache statistics
+	 *
+	 * @return array Cache stats with 'product_count' and 'selling_plans_count'
+	 */
+	public static function get_cache_stats() {
+		global $wpdb;
+
+		$product_count = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s",
+				'_transient_' . self::PRODUCT_CACHE_PREFIX . '%'
+			)
+		);
+
+		$plans_count = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s",
+				'_transient_' . self::SELLING_PLANS_CACHE_PREFIX . '%'
+			)
+		);
+
+		return array(
+			'product_count'       => intval( $product_count ),
+			'selling_plans_count' => intval( $plans_count ),
+		);
 	}
 
 	/**
@@ -602,8 +715,17 @@ class WCS_Shopify_API {
 		// Create cache key
 		$cache_key = $shopify_product_id . '_' . $billing_interval . '_' . $billing_period;
 
+		// Check runtime cache first
 		if ( isset( $this->selling_plans_cache[ $cache_key ] ) ) {
 			return $this->selling_plans_cache[ $cache_key ];
+		}
+
+		// Check transient cache
+		$transient_key = self::SELLING_PLANS_CACHE_PREFIX . md5( $cache_key );
+		$cached_result = get_transient( $transient_key );
+		if ( false !== $cached_result ) {
+			$this->selling_plans_cache[ $cache_key ] = $cached_result;
+			return $cached_result;
 		}
 
 		// Normalize billing period to Shopify format
@@ -631,8 +753,9 @@ class WCS_Shopify_API {
 		// Find matching selling plan based on interval and period
 		$result = $this->match_selling_plan( $selling_plans, $billing_interval, $shopify_interval_unit );
 
-		// Cache the result
+		// Cache the result in both runtime and transient cache
 		$this->selling_plans_cache[ $cache_key ] = $result;
+		set_transient( self::SELLING_PLANS_CACHE_PREFIX . md5( $cache_key ), $result, self::CACHE_EXPIRATION );
 
 		return $result;
 	}
