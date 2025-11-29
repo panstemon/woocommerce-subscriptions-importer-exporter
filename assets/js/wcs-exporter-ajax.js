@@ -370,13 +370,6 @@ jQuery(document).ready(function($) {
 			.addClass('notice-' + type)
 			.html('<p>' + message + '</p>')
 			.show();
-
-		// Auto-hide success messages after 5 seconds
-		if (type === 'success') {
-			setTimeout(function() {
-				$messageDiv.fadeOut();
-			}, 5000);
-		}
 	}
 
 	/**
