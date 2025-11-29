@@ -130,6 +130,31 @@ class WCS_Export_Admin {
 				width: 0%;
 				transition: width 0.3s ease;
 				border-radius: 4px;
+				position: relative;
+				overflow: hidden;
+			}
+			#wcs-export-progress-bar::after {
+				content: "";
+				position: absolute;
+				top: 0;
+				left: -100%;
+				width: 100%;
+				height: 100%;
+				background: linear-gradient(
+					90deg,
+					transparent,
+					rgba(255, 255, 255, 0.3),
+					transparent
+				);
+				animation: wcs-shimmer 1.5s infinite;
+			}
+			@keyframes wcs-shimmer {
+				0% { left: -100%; }
+				100% { left: 100%; }
+			}
+			#wcs-export-progress-bar.complete::after {
+				animation: none;
+				display: none;
 			}
 			#wcs-export-progress-text {
 				position: absolute;

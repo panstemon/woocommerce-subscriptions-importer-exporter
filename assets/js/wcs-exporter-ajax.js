@@ -117,7 +117,7 @@ jQuery(document).ready(function($) {
 		$cronBtn.prop('disabled', true);
 		$cancelBtn.show().prop('disabled', false).text(wcsExporterAjax.strings.cancel || 'Cancel Export');
 		$progressSection.show();
-		$progressBar.css('width', '0%');
+		$progressBar.css('width', '0%').removeClass('complete');
 		$progressText.text('0%');
 		$statusText.text(wcsExporterAjax.strings.initializing || 'Initializing export...');
 		
@@ -315,7 +315,7 @@ jQuery(document).ready(function($) {
 	function completeExport() {
 		stopElapsedTimer();
 		
-		$progressBar.css('width', '100%');
+		$progressBar.css('width', '100%').addClass('complete');
 		$progressText.text('100%');
 		$statusText.text(wcsExporterAjax.strings.completed || 'Export completed!');
 		$statRemaining.text('00:00');
