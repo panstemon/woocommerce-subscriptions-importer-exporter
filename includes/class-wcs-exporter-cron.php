@@ -118,9 +118,8 @@ class WCS_Exporter_Cron {
         // Get file size
         $file_size = file_exists( $file_path ) ? size_format( filesize( $file_path ) ) : __( 'Unknown', 'wcs-import-export' );
         
-        // Get download URL
-        $upload_dir = wp_upload_dir();
-        $download_url = $upload_dir['baseurl'] . '/woocommerce-subscriptions-importer-exporter/' . $final_filename;
+        // Get secure download URL via WordPress AJAX endpoint
+        $download_url = WCS_Export_Admin::get_secure_download_url( $final_filename, 'cron' );
         
         // Get exports page URL
         $exports_page_url = add_query_arg( 

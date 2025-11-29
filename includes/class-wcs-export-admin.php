@@ -43,6 +43,9 @@ class WCS_Export_Admin {
 		add_action( 'wp_ajax_wcs_export_cancel', array( &$this, 'ajax_export_cancel' ) );
 		add_action( 'wp_ajax_wcs_export_complete', array( &$this, 'ajax_export_complete' ) );
 
+		// AJAX handler for secure file downloads
+		add_action( 'wp_ajax_wcs_download_export', array( &$this, 'ajax_download_export' ) );
+
 		// Ensure export directory is secured (runs once per admin init)
 		add_action( 'admin_init', array( __CLASS__, 'maybe_secure_export_directory' ) );
 	}
@@ -565,7 +568,6 @@ class WCS_Export_Admin {
 		if ( file_exists( WCS_Exporter_Cron::$cron_dir ) ) {
 			$cron_files = scandir( WCS_Exporter_Cron::$cron_dir );
 			$cron_files = array_diff( $cron_files, array( '.', '..', 'index.php', '.htaccess' ) );
-			$cron_files_url = $upload_dir['baseurl'] . '/woocommerce-subscriptions-importer-exporter/';
 
 			foreach ( $cron_files as $file ) {
 				$file_path = trailingslashit( WCS_Exporter_Cron::$cron_dir ) . $file;
@@ -579,7 +581,7 @@ class WCS_Export_Admin {
 
 				$files_data[] = array(
 					'name'      => $file,
-					'url'       => $cron_files_url . $file,
+					'url'       => self::get_secure_download_url( $file, 'cron' ),
 					'status'    => $status,
 					'type'      => 'cron',
 					'date'      => date_i18n( $datetime_format, $file_time ),
@@ -592,7 +594,6 @@ class WCS_Export_Admin {
 		$ajax_export_dir = $upload_dir['basedir'] . '/wcs-exports/';
 		if ( file_exists( $ajax_export_dir ) ) {
 			$ajax_files = glob( $ajax_export_dir . '*.csv' );
-			$ajax_files_url = $upload_dir['baseurl'] . '/wcs-exports/';
 
 			foreach ( $ajax_files as $file_path ) {
 				$file = basename( $file_path );
@@ -600,7 +601,7 @@ class WCS_Export_Admin {
 
 				$files_data[] = array(
 					'name'      => $file,
-					'url'       => $ajax_files_url . $file,
+					'url'       => self::get_secure_download_url( $file, 'ajax' ),
 					'status'    => 'completed',
 					'type'      => 'ajax',
 					'date'      => date_i18n( $datetime_format, $file_time ),
@@ -1276,9 +1277,8 @@ class WCS_Export_Admin {
 		// Clean up transient - no longer needed
 		delete_transient( 'wcs_export_' . $session_id );
 
-		// Generate direct download URL - security is handled by .htaccess checking WordPress login cookie
-		$upload_dir = wp_upload_dir();
-		$download_url = $upload_dir['baseurl'] . '/wcs-exports/' . $final_filename;
+		// Generate secure download URL via WordPress AJAX endpoint
+		$download_url = self::get_secure_download_url( $final_filename, 'ajax' );
 
 		wp_send_json_success( array(
 			'download_url' => $download_url,
@@ -1287,8 +1287,79 @@ class WCS_Export_Admin {
 	}
 
 	/**
+	 * AJAX handler for secure file downloads.
+	 * Checks user capability and serves the file.
+	 *
+	 * @since 2.1.0
+	 */
+	public function ajax_download_export() {
+		// Check user capability - this is sufficient security since only admins can download
+		// No nonce used because download links in emails need to work after 24+ hours
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( __( 'You do not have permission to download this file.', 'wcs-import-export' ), 403 );
+		}
+
+		// Get file parameters
+		$filename = isset( $_GET['file'] ) ? sanitize_file_name( $_GET['file'] ) : '';
+		$type = isset( $_GET['type'] ) ? sanitize_text_field( $_GET['type'] ) : 'ajax';
+
+		if ( empty( $filename ) ) {
+			wp_die( __( 'No file specified.', 'wcs-import-export' ), 400 );
+		}
+
+		// Determine directory based on type
+		$upload_dir = wp_upload_dir();
+		if ( 'cron' === $type ) {
+			$file_path = $upload_dir['basedir'] . '/woocommerce-subscriptions-importer-exporter/' . $filename;
+		} else {
+			$file_path = $upload_dir['basedir'] . '/wcs-exports/' . $filename;
+		}
+
+		// Security: ensure filename doesn't contain path traversal
+		if ( strpos( $filename, '..' ) !== false || strpos( $filename, '/' ) !== false || strpos( $filename, '\\' ) !== false ) {
+			wp_die( __( 'Invalid filename.', 'wcs-import-export' ), 400 );
+		}
+
+		// Check file exists and is a CSV
+		if ( ! file_exists( $file_path ) || pathinfo( $file_path, PATHINFO_EXTENSION ) !== 'csv' ) {
+			wp_die( __( 'File not found.', 'wcs-import-export' ), 404 );
+		}
+
+		// Serve the file
+		header( 'Content-Type: text/csv' );
+		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+		header( 'Content-Length: ' . filesize( $file_path ) );
+		header( 'Pragma: public' );
+		header( 'Cache-Control: must-revalidate, post-check=0, pre-check=0' );
+
+		// Clear output buffer
+		if ( ob_get_level() ) {
+			ob_end_clean();
+		}
+
+		readfile( $file_path );
+		exit;
+	}
+
+	/**
+	 * Generate a secure download URL for an export file.
+	 *
+	 * @since 2.1.0
+	 * @param string $filename The filename.
+	 * @param string $type Either 'ajax' or 'cron'.
+	 * @return string The secure download URL.
+	 */
+	public static function get_secure_download_url( $filename, $type = 'ajax' ) {
+		return add_query_arg( array(
+			'action' => 'wcs_download_export',
+			'file'   => $filename,
+			'type'   => $type,
+		), admin_url( 'admin-ajax.php' ) );
+	}
+
+	/**
 	 * Secure the export directory using .htaccess.
-	 * Only users logged into WordPress admin can access files.
+	 * Blocks ALL direct access - downloads go through WordPress AJAX.
 	 *
 	 * @since 2.1.0
 	 * @param string $dir_path The directory path to secure.
@@ -1300,37 +1371,34 @@ class WCS_Export_Admin {
 			file_put_contents( $index_file, '<?php // Silence is golden' );
 		}
 
-		// Create .htaccess that checks for WordPress logged-in cookie (Apache)
-		// This allows logged-in WordPress users to download files directly
+		// Create .htaccess that blocks ALL direct access
+		// Downloads are served through WordPress AJAX endpoint which checks capabilities
 		$htaccess_file = $dir_path . '.htaccess';
-		$htaccess_content = "# Only allow access to users with WordPress logged-in cookie\n";
-		$htaccess_content .= "# This checks for the wordpress_logged_in_ cookie which is set for authenticated users\n";
-		$htaccess_content .= "<IfModule mod_rewrite.c>\n";
-		$htaccess_content .= "    RewriteEngine On\n";
-		$htaccess_content .= "    RewriteCond %{HTTP_COOKIE} !wordpress_logged_in_ [NC]\n";
-		$htaccess_content .= "    RewriteRule .* - [F,L]\n";
-		$htaccess_content .= "</IfModule>\n\n";
-		$htaccess_content .= "# Fallback for servers without mod_rewrite\n";
-		$htaccess_content .= "<IfModule !mod_rewrite.c>\n";
-		$htaccess_content .= "    <FilesMatch \"\\.(csv)$\">\n";
-		$htaccess_content .= "        Order Deny,Allow\n";
-		$htaccess_content .= "        Deny from all\n";
-		$htaccess_content .= "    </FilesMatch>\n";
-		$htaccess_content .= "</IfModule>\n";
+		$htaccess_content = "# Block all direct access to export files\n";
+		$htaccess_content .= "# Downloads are served via WordPress AJAX with capability check\n";
+		$htaccess_content .= "Order Deny,Allow\n";
+		$htaccess_content .= "Deny from all\n";
 		file_put_contents( $htaccess_file, $htaccess_content );
 	}
 
 	/**
-	 * Ensure export directory is secured. Called on admin_init.
+	 * Ensure export directories are secured. Called on admin_init.
 	 *
 	 * @since 2.1.0
 	 */
 	public static function maybe_secure_export_directory() {
 		$upload_dir = wp_upload_dir();
-		$export_dir = $upload_dir['basedir'] . '/wcs-exports/';
 		
-		if ( file_exists( $export_dir ) ) {
-			self::secure_export_directory( $export_dir );
+		// Secure AJAX exports directory
+		$ajax_export_dir = $upload_dir['basedir'] . '/wcs-exports/';
+		if ( file_exists( $ajax_export_dir ) ) {
+			self::secure_export_directory( $ajax_export_dir );
+		}
+		
+		// Secure Cron exports directory
+		$cron_export_dir = $upload_dir['basedir'] . '/woocommerce-subscriptions-importer-exporter/';
+		if ( file_exists( $cron_export_dir ) ) {
+			self::secure_export_directory( $cron_export_dir );
 		}
 	}
 }
