@@ -92,6 +92,9 @@ class WCS_Importer_Exporter {
 			if ( class_exists( 'WC_Subscriptions' ) && version_compare( WC_Subscriptions::$version, self::$required_subscriptions_version, '>=' ) ) {
 				self::$wcs_exporter = new WCS_Export_Admin();
 				self::$wcs_importer = new WCS_Import_Admin();
+				
+				// Load Shopify settings
+				require_once( self::plugin_dir() . '/includes/class-wcs-shopify-settings.php' );
 			} else {
 				add_action( 'admin_notices', __CLASS__ . '::plugin_dependency_notice' );
 			}

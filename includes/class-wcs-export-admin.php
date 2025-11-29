@@ -427,49 +427,45 @@ class WCS_Export_Admin {
 					<tr>
 						<td><label for="notification_email"><?php esc_html_e( 'Notification Email', 'wcs-import-export' ); ?>:</label></td>
 						<td>
-							<input type="email" name="notification_email" id="notification_email" placeholder="<?php echo esc_attr( wp_get_current_user()->user_email ); ?>" value="<?php echo ! empty( $_POST['notification_email'] ) ? esc_attr( $_POST['notification_email'] ) : ''; ?>" style="width: 300px;">
+							<?php $current_user_email = wp_get_current_user()->user_email; ?>
+							<input type="email" name="notification_email" id="notification_email" placeholder="<?php echo esc_attr( $current_user_email ); ?>" value="<?php echo ! empty( $_POST['notification_email'] ) ? esc_attr( $_POST['notification_email'] ) : esc_attr( $current_user_email ); ?>" style="width: 300px;">
 							<p class="description"><?php esc_html_e( 'Email address to receive notification when cron export completes. Leave empty to skip notification.', 'wcs-import-export' ); ?></p>
 						</td>
 					</tr>
-					<tr>
-						<td colspan="2">
-							<strong><?php esc_html_e( 'Shopify Integration (Optional)', 'wcs-import-export' ); ?></strong>
-							<a href="#" id="shopify-setup-toggle" style="margin-left: 10px; font-size: 12px;"><?php esc_html_e( 'Setup instructions ▼', 'wcs-import-export' ); ?></a>
-							<div id="shopify-setup-instructions" style="display: none; margin-top: 10px; padding: 10px; background: #f9f9f9; border-left: 4px solid #0073aa;">
-								<strong><?php esc_html_e( 'Important:', 'wcs-import-export' ); ?></strong> <?php esc_html_e( 'To use Shopify integration, you must enable the woo.id metafield for filtering in Shopify Admin:', 'wcs-import-export' ); ?><br>
-								<ol style="margin: 10px 0 10px 20px;">
-									<li><?php esc_html_e( 'Go to Shopify Admin > Settings > Custom data', 'wcs-import-export' ); ?></li>
-									<li><?php esc_html_e( 'Click on Products (and/or Variants)', 'wcs-import-export' ); ?></li>
-									<li><?php esc_html_e( 'Find and click on the woo.id metafield definition', 'wcs-import-export' ); ?></li>
-									<li><?php esc_html_e( 'Enable "Storefront Filtering" option and save', 'wcs-import-export' ); ?></li>
-								</ol>
-								<?php esc_html_e( 'Without this, product matching via GraphQL will not work.', 'wcs-import-export' ); ?>
-							</div>
-							<script>
-								document.getElementById('shopify-setup-toggle').addEventListener('click', function(e) {
-									e.preventDefault();
-									var instructions = document.getElementById('shopify-setup-instructions');
-									var isHidden = instructions.style.display === 'none';
-									instructions.style.display = isHidden ? 'block' : 'none';
-									this.textContent = isHidden ? '<?php echo esc_js( __( 'Setup instructions ▲', 'wcs-import-export' ) ); ?>' : '<?php echo esc_js( __( 'Setup instructions ▼', 'wcs-import-export' ) ); ?>';
-								});
-							</script>
-						</td>
-					</tr>
-					<tr>
-						<td><label for="shopify_store_url"><?php esc_html_e( 'Shopify Store URL', 'wcs-import-export' ); ?>:</label></td>
-						<td><input type="text" name="shopify_store_url" id="shopify_store_url" placeholder="mystore.myshopify.com" value="<?php echo ! empty( $_POST['shopify_store_url'] ) ? esc_attr( $_POST['shopify_store_url'] ) : ''; ?>" style="width: 300px;"> <?php esc_html_e( 'Enter your Shopify store URL (e.g., mystore.myshopify.com)', 'wcs-import-export' ); ?></td>
-					</tr>
-					<tr>
-						<td><label for="shopify_access_token"><?php esc_html_e( 'Shopify Access Token', 'wcs-import-export' ); ?>:</label></td>
-						<td><input type="password" name="shopify_access_token" id="shopify_access_token" placeholder="shpat_xxxxxxxxxxxxx" value="<?php echo ! empty( $_POST['shopify_access_token'] ) ? esc_attr( $_POST['shopify_access_token'] ) : ''; ?>" style="width: 300px;"> <?php esc_html_e( 'Enter your Shopify Admin API access token. Required for shopify_order_items column.', 'wcs-import-export' ); ?></td>
-					</tr>
-					<tr>
-						<td><label for="shopify_storefront_url"><?php esc_html_e( 'Shopify Storefront URL', 'wcs-import-export' ); ?>:</label></td>
-						<td><input type="text" name="shopify_storefront_url" id="shopify_storefront_url" placeholder="mystore.com" value="<?php echo ! empty( $_POST['shopify_storefront_url'] ) ? esc_attr( $_POST['shopify_storefront_url'] ) : ''; ?>" style="width: 300px;"> <?php esc_html_e( 'Enter your Shopify storefront URL for Quick Checkout links (e.g., mystore.com). Leave empty to use Admin API URL.', 'wcs-import-export' ); ?></td>
-					</tr>
 				</tbody>
 			</table>
+			
+			<?php 
+			// Show Shopify Integration notice if configured
+			$shopify_store_url = get_option( 'wcs_shopify_store_url', '' );
+			$shopify_configured = ! empty( $shopify_store_url ) && ! empty( get_option( 'wcs_shopify_access_token', '' ) );
+			?>
+			<div style="background: #f9f9f9; border-left: 4px solid <?php echo $shopify_configured ? '#00a32a' : '#dba617'; ?>; padding: 12px 15px; margin: 15px 0;">
+				<strong><?php esc_html_e( 'Shopify Integration', 'wcs-import-export' ); ?></strong>
+				<?php if ( $shopify_configured ) : ?>
+					<span style="color: #00a32a; margin-left: 10px;">✓ <?php esc_html_e( 'Configured', 'wcs-import-export' ); ?></span>
+					<p style="margin: 8px 0 0;">
+						<?php 
+						printf( 
+							/* translators: %s: Settings page URL */
+							esc_html__( 'Shopify credentials are configured. You can manage them in %s.', 'wcs-import-export' ),
+							'<a href="' . esc_url( admin_url( 'admin.php?page=wc-settings&tab=advanced&section=shopify_migration' ) ) . '">' . esc_html__( 'WooCommerce → Settings → Advanced → Shopify Migration', 'wcs-import-export' ) . '</a>'
+						);
+						?>
+					</p>
+				<?php else : ?>
+					<p style="margin: 8px 0 0;">
+						<?php 
+						printf( 
+							/* translators: %s: Settings page URL */
+							esc_html__( 'To use Shopify product matching and Quick Checkout links, configure your credentials in %s.', 'wcs-import-export' ),
+							'<a href="' . esc_url( admin_url( 'admin.php?page=wc-settings&tab=advanced&section=shopify_migration' ) ) . '">' . esc_html__( 'WooCommerce → Settings → Advanced → Shopify Migration', 'wcs-import-export' ) . '</a>'
+						);
+						?>
+					</p>
+				<?php endif; ?>
+			</div>
+			
 			<?php esc_html_e( 'When exporting all subscriptions, your site may experience memory exhaustion and therefore you may need to use the limit and offset to separate your export into multiple CSV files.', 'wcs-import-export' ); ?>
 
 			<?php
@@ -1038,9 +1034,11 @@ class WCS_Export_Admin {
 
 		// Validate based on export format
 		if ( $export_format === 'appstle' ) {
-			// Appstle format requires Shopify credentials
-			if ( empty( $form_data['shopify_store_url'] ) || empty( $form_data['shopify_api_token'] ) ) {
-				wp_send_json_error( array( 'message' => __( 'Appstle export format requires Shopify credentials. Please enter your Shopify Store URL and API Token.', 'wcs-import-export' ) ) );
+			// Appstle format requires Shopify credentials from WooCommerce settings
+			$shopify_store_url = get_option( 'wcs_shopify_store_url', '' );
+			$shopify_access_token = get_option( 'wcs_shopify_access_token', '' );
+			if ( empty( $shopify_store_url ) || empty( $shopify_access_token ) ) {
+				wp_send_json_error( array( 'message' => __( 'Appstle export format requires Shopify credentials. Please configure them in WooCommerce → Settings → Advanced → Shopify Migration.', 'wcs-import-export' ) ) );
 			}
 		} elseif ( empty( $csv_headers ) ) {
 			// Standard format requires at least one CSV header
@@ -1191,12 +1189,15 @@ class WCS_Export_Admin {
 			wp_send_json_error( array( 'message' => __( 'Could not open export file for writing.', 'wcs-import-export' ) ) );
 		}
 
-		// Initialize Shopify API if needed
-		if ( ! empty( $form_data['shopify_store_url'] ) && ! empty( $form_data['shopify_access_token'] ) ) {
+		// Initialize Shopify API if configured in WooCommerce settings
+		$shopify_store_url = get_option( 'wcs_shopify_store_url', '' );
+		$shopify_access_token = get_option( 'wcs_shopify_access_token', '' );
+		if ( ! empty( $shopify_store_url ) && ! empty( $shopify_access_token ) ) {
+			$shopify_storefront_url = get_option( 'wcs_shopify_storefront_url', '' );
 			$shopify_api = new WCS_Shopify_API(
-				sanitize_text_field( $form_data['shopify_store_url'] ),
-				sanitize_text_field( $form_data['shopify_access_token'] ),
-				isset( $form_data['shopify_storefront_url'] ) ? sanitize_text_field( $form_data['shopify_storefront_url'] ) : ''
+				$shopify_store_url,
+				$shopify_access_token,
+				$shopify_storefront_url
 			);
 			WCS_Exporter::set_shopify_api( $shopify_api );
 		}

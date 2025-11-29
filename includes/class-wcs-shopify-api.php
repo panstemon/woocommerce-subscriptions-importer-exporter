@@ -961,4 +961,112 @@ class WCS_Shopify_API {
 
 		return $full_url;
 	}
+
+	/**
+	 * Build a Shopify Quick Checkout link directly from a WooCommerce subscription
+	 *
+	 * This is a convenience method that handles all the data extraction from the subscription
+	 * and delegates to build_checkout_link() for URL generation.
+	 *
+	 * @since 2.2.2
+	 * @param WC_Subscription $subscription WooCommerce subscription object
+	 * @param string $discount_code Optional discount code
+	 * @return array Array with 'link', 'errors', and 'success' keys
+	 */
+	public function build_checkout_link_from_subscription( $subscription, $discount_code = '' ) {
+		$result = array(
+			'success' => false,
+			'link'    => '',
+			'errors'  => array(),
+		);
+
+		if ( ! $this->is_configured() ) {
+			$result['errors'][] = __( 'Shopify API is not configured.', 'wcs-import-export' );
+			return $result;
+		}
+
+		// Build items array from subscription
+		$items = array();
+		$billing_interval = $subscription->get_billing_interval();
+		$billing_period   = $subscription->get_billing_period();
+
+		foreach ( $subscription->get_items() as $item ) {
+			$product_id   = $item->get_product_id();
+			$variation_id = $item->get_variation_id();
+			$quantity     = $item->get_quantity();
+
+			// Get Shopify product/variant IDs
+			$shopify_data = $variation_id 
+				? $this->get_shopify_variant_by_woo_id( $product_id, $variation_id )
+				: $this->get_shopify_product_by_woo_id( $product_id );
+
+			if ( is_wp_error( $shopify_data ) ) {
+				$result['errors'][] = sprintf( 
+					__( 'Product %d: %s', 'wcs-import-export' ), 
+					$product_id, 
+					$shopify_data->get_error_message() 
+				);
+				continue;
+			}
+
+			if ( empty( $shopify_data['shopify_variant_id'] ) ) {
+				$result['errors'][] = sprintf( 
+					__( 'Product %d: Could not find Shopify variant ID', 'wcs-import-export' ), 
+					$product_id 
+				);
+				continue;
+			}
+
+			// Get selling plan
+			$selling_plan = $this->get_selling_plan_for_product(
+				$shopify_data['shopify_product_id'],
+				$shopify_data['shopify_variant_id'],
+				$billing_interval,
+				$billing_period
+			);
+
+			$items[] = array(
+				'variant_id'      => $shopify_data['shopify_variant_id'],
+				'quantity'        => $quantity,
+				'selling_plan_id' => ! empty( $selling_plan['selling_plan_id'] ) ? $selling_plan['selling_plan_id'] : '',
+			);
+		}
+
+		if ( empty( $items ) ) {
+			$result['errors'][] = __( 'Could not find any valid Shopify products for this subscription.', 'wcs-import-export' );
+			return $result;
+		}
+
+		// Build shipping address (prefer shipping, fallback to billing)
+		$shipping_address = array(
+			'first_name' => $subscription->get_shipping_first_name() ?: $subscription->get_billing_first_name(),
+			'last_name'  => $subscription->get_shipping_last_name() ?: $subscription->get_billing_last_name(),
+			'address1'   => $subscription->get_shipping_address_1() ?: $subscription->get_billing_address_1(),
+			'address2'   => $subscription->get_shipping_address_2() ?: $subscription->get_billing_address_2(),
+			'city'       => $subscription->get_shipping_city() ?: $subscription->get_billing_city(),
+			'zip'        => $subscription->get_shipping_postcode() ?: $subscription->get_billing_postcode(),
+			'country'    => $subscription->get_shipping_country() ?: $subscription->get_billing_country(),
+			'province'   => $subscription->get_shipping_state() ?: $subscription->get_billing_state(),
+			'phone'      => $subscription->get_billing_phone(),
+		);
+
+		// Build the checkout link
+		$link = $this->build_checkout_link(
+			$items,
+			$subscription->get_id(),
+			$subscription->get_billing_email(),
+			$shipping_address,
+			$discount_code
+		);
+
+		if ( empty( $link ) ) {
+			$result['errors'][] = __( 'Could not generate checkout link.', 'wcs-import-export' );
+			return $result;
+		}
+
+		$result['success'] = true;
+		$result['link']    = $link;
+
+		return $result;
+	}
 }
